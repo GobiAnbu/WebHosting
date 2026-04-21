@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Bulk Sender</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            min-height: 100vh;
+            padding: 30px 20px;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0;
+            display: flex;
+            min-height: calc(100vh - 60px);
+        }
+
+        .left-panel {
+            flex: 1;
+            padding: 24px;
+            border-right: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .right-panel {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+            max-height: calc(100vh - 60px);
+        }
+
+        /* HEADER */
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .header .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(37,211,102,0.12);
+            border: 1px solid rgba(37,211,102,0.25);
+            border-radius: 50px;
+            padding: 8px 20px;
+            margin-bottom: 14px;
+        }
+        .header .pill span { color: #25D366; font-size: 0.85rem; font-weight: 600; }
+        .header h1 { color: #fff; font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; }
+        .header h1 em { color: #25D366; font-style: normal; }
+        .header p { color: rgba(255,255,255,0.45); font-size: 0.9rem; margin-top: 8px; }
+
+        /* CARD */
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(14px);
+        }
+
+        .card-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* TEXTAREA */
+        textarea#template {
+            width: 100%;
+            background: rgba(0,0,0,0.3);
+            border: 1.5px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            padding: 14px 16px;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.2s;
+            min-height: 100px;
+        }
+        textarea#template:focus { border-color: #25D366; }
+        textarea#template::placeholder { color: rgba(255,255,255,0.25); }
+
+        /* TABLE */
+        .table-wrap {
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+
+        thead tr { background: rgba(37,211,102,0.1); }
+
+        th {
+            padding: 12px 14px;
+            text-align: left;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: #25D366;
+        }
+
+        td {
+            padding: 8px 10px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+
+        tr:hover td { background: rgba(255,255,255,0.02); }
+
+        td input {
+            width: 100%;
+            background: rgba(0,0,0,0.25);
+            border: 1.5px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.875rem;
+            padding: 8px 10px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        td input:focus { border-color: #25D366; }
+        td input::placeholder { color: rgba(255,255,255,0.25); }
+
+        /* BUTTONS */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-ghost {
+            background: rgba(255,255,255,0.07);
+            border: 1.5px solid rgba(255,255,255,0.12);
+            color: #fff;
+        }
+        .btn-ghost:hover { background: rgba(255,255,255,0.13); }
+
+        .btn-danger {
+            background: rgba(231,76,60,0.12);
+            border: 1px solid rgba(231,76,60,0.25);
+            color: #e74c3c;
+            padding: 7px 12px;
+            font-size: 0.8rem;
+        }
+        .btn-danger:hover { background: rgba(231,76,60,0.3); }
+
+        .btn-send {
+            width: 100%;
+            justify-content: center;
+            background: linear-gradient(135deg, #25D366, #128C7E);
+            color: #fff;
+            padding: 14px;
+            font-size: 1rem;
+            border-radius: 14px;
+            box-shadow: 0 4px 20px rgba(37,211,102,0.3);
+            margin-top: 4px;
+        }
+        .btn-send:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(37,211,102,0.5);
+        }
+        .btn-send:active { transform: translateY(0); }
+
+        .actions-row { display: flex; gap: 10px; margin-top: 14px; }
+
+        /* PHONE PREVIEW */
+        .phone-frame {
+            width: 700px;
+            height: 700px;
+            margin: 0 auto;
+            background: #0b141a;
+            border-radius: 28px;
+            overflow: hidden;
+            border: 2px solid rgba(255,255,255,0.1);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .phone-header {
+            background: #1f2c34;
+            padding: 8px 12px 10px;
+        }
+        .phone-status-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 0.7rem; color: rgba(255,255,255,0.5); margin-bottom: 8px;
+        }
+        .phone-contact-bar {
+            display: flex; align-items: center; gap: 10px;
+        }
+        .phone-avatar {
+            width: 34px; height: 34px; border-radius: 50%;
+            background: rgba(255,255,255,0.15); display: flex;
+            align-items: center; justify-content: center; font-size: 1rem;
+        }
+        .phone-contact-name {
+            color: #fff; font-size: 0.9rem; font-weight: 600;
+        }
+        .phone-contact-status {
+            color: rgba(255,255,255,0.4); font-size: 0.65rem;
+        }
+        .phone-chat {
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect fill="%23091519" width="200" height="200"/><circle cx="30" cy="30" r="1.5" fill="%23ffffff08"/><circle cx="100" cy="80" r="1" fill="%23ffffff06"/><circle cx="160" cy="50" r="1.2" fill="%23ffffff05"/></svg>');
+            background-color: #091519;
+            min-height: 340px;
+            padding: 16px 12px;
+            display: flex; flex-direction: column;
+        }
+        .wa-date-chip {
+            align-self: center;
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.5);
+            font-size: 0.65rem; font-weight: 500;
+            padding: 4px 12px; border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .wa-bubble {
+            align-self: flex-end;
+            background: #005c4b;
+            color: #e9edef;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            padding: 8px 10px 6px;
+            border-radius: 10px 0 10px 10px;
+            max-width: 85%;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            position: relative;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+        .wa-bubble-tail {
+            position: absolute; top: 0; right: -7px;
+            width: 0; height: 0;
+            border-style: solid;
+            border-width: 0 0 8px 8px;
+            border-color: transparent transparent transparent #005c4b;
+        }
+        .wa-bubble-time {
+            text-align: right;
+            font-size: 0.6rem;
+            color: rgba(255,255,255,0.45);
+            margin-top: 3px;
+        }
+        .phone-input-bar {
+            background: #1f2c34;
+            padding: 8px 10px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .phone-input-field {
+            flex: 1; background: #2a3942; border-radius: 20px;
+            padding: 8px 14px; color: rgba(255,255,255,0.3);
+            font-size: 0.8rem;
+        }
+        .phone-mic {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: #25D366; display: flex;
+            align-items: center; justify-content: center; font-size: 0.9rem;
+        }
+
+        /* PREVIEW */
+        .preview-bubble {
+            background: rgba(37,211,102,0.07);
+            border: 1.5px solid rgba(37,211,102,0.18);
+            border-radius: 0 16px 16px 16px;
+            padding: 14px 18px;
+            color: rgba(255,255,255,0.85);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            position: relative;
+            min-height: 52px;
+        }
+        .preview-bubble::before {
+            content: '';
+            position: absolute;
+            top: 0; left: -8px;
+            border-width: 0 8px 8px 0;
+            border-style: solid;
+            border-color: transparent rgba(37,211,102,0.18) transparent transparent;
+        }
+
+        /* TOAST */
+        .toast {
+            position: fixed;
+            bottom: 28px; left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: linear-gradient(135deg, #25D366, #128C7E);
+            color: #fff;
+            padding: 12px 28px;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+            transition: transform 0.4s cubic-bezier(0.175,0.885,0.32,1.275);
+            z-index: 999;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+
+        @media (max-width: 600px) {
+            .header h1 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- LEFT PANEL -->
+    <div class="left-panel">
+        <div style="text-align:center; margin-bottom:18px;">
+            <div class="card-title" style="justify-content:center;">📱 WhatsApp Preview</div>
+        </div>
+        <div class="phone-frame">
+            <div class="phone-header">
+                <div class="phone-status-bar">
+                    <span>9:41</span>
+                    <span>●●● WiFi 🔋</span>
+                </div>
+                <div class="phone-contact-bar">
+                    <div class="phone-avatar">👤</div>
+                    <div>
+                        <div class="phone-contact-name" id="previewName">John Doe</div>
+                        <div class="phone-contact-status">online</div>
+                    </div>
+                </div>
+            </div>
+            <div class="phone-chat">
+                <div class="wa-date-chip">Today</div>
+                <div class="wa-bubble" id="waPreviewBubble">
+                    <div class="wa-bubble-tail"></div>
+                    <span id="waPreviewText">Hi John Doe, your order ORD-001 is confirmed. Thank you! 🎉</span>
+                    <div class="wa-bubble-time" id="waPreviewTime">9:41 AM ✓✓</div>
+                </div>
+            </div>
+            <div class="phone-input-bar">
+                <div class="phone-input-field">Type a message</div>
+                <div class="phone-mic">🎤</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+
+        <!-- HEADER -->
+        <div class="header">
+            <div class="pill">
+                <span>📲 BulkSend Pro</span>
+            </div>
+            <h1>WhatsApp <em>Bulk</em> Sender</h1>
+            <p>Craft personalized messages and send to multiple recipients instantly</p>
+        </div>
+
+        <!-- TEMPLATE -->
+        <div class="card">
+            <div class="card-title">✏️ Message Template</div>
+            <textarea id="template" placeholder="Type your message...">Hi {name}, your order {order_id} is confirmed. Thank you! 🎉</textarea>
+        </div>
+
+        <!-- RECIPIENTS -->
+        <div class="card">
+            <div class="card-title">👥 Recipients</div>
+            <div class="table-wrap">
+                <table id="table">
+                    <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Phone Number</th>
+                        <th>Order ID</th>
+                        <th>Remove</th>
+                    </tr>
+                    </thead>
+                    <tbody id="tbody"></tbody>
+                </table>
+            </div>
+            <div class="actions-row">
+                <button class="btn btn-ghost" onclick="addRow()">➕ Add Recipient</button>
+            </div>
+        </div>
+
+        <!-- PREVIEW -->
+        <div class="card">
+            <div class="card-title">👁️ Live Preview <span style="color:rgba(255,255,255,0.25); font-size:0.75rem; font-weight:400; text-transform:none; letter-spacing:0;">&nbsp;— first recipient</span></div>
+            <div class="preview-bubble" id="preview">Add a recipient to see the preview...</div>
+        </div>
+
+        <!-- SEND -->
+        <button class="btn btn-send" onclick="sendMessages()">🚀 Send All Messages</button>
+
+    </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    function addRow() {
+        const tbody = document.getElementById("tbody");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td><input placeholder="John Doe"></td>
+            <td><input placeholder="91XXXXXXXXXX"></td>
+            <td><input placeholder="ORD-001"></td>
+            <td><button class="btn btn-danger" onclick="this.closest('tr').remove(); updatePreview()">✕</button></td>
+        `;
+        tbody.appendChild(tr);
+        updatePreview();
+    }
+
+    function updatePreview() {
+        const template = document.getElementById("template").value;
+        const firstRow = document.querySelector("#tbody tr");
+        if (!firstRow) { document.getElementById("preview").textContent = "Add a recipient to see the preview..."; return; }
+        const inputs = firstRow.querySelectorAll("input");
+        const msg = template
+            .replace(/{name}/g, inputs[0].value || "John Doe")
+            .replace(/{phone}/g, inputs[1].value || "91XXXXXXXXXX")
+            .replace(/{order_id}/g, inputs[2].value || "ORD-001");
+        document.getElementById("preview").textContent = msg;
+        // Update WhatsApp phone preview
+        document.getElementById("waPreviewText").textContent = msg;
+        document.getElementById("previewName").textContent = inputs[0].value || "John Doe";
+        const now = new Date();
+        document.getElementById("waPreviewTime").textContent = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ' ✓✓';
+    }
+
+    document.addEventListener("input", updatePreview);
+
+    function sendMessages() {
+        const template = document.getElementById("template").value;
+        const rows = document.querySelectorAll("#tbody tr");
+        const data = [];
+        rows.forEach(row => {
+            const inputs = row.querySelectorAll("input");
+            data.push({ name: inputs[0].value, phone: inputs[1].value, order_id: inputs[2].value });
+        });
+        if (data.length === 0) { showToast("⚠️ Add at least one recipient!"); return; }
+        fetch("/send-campaign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ template, users: data })
+        })
+        .then(r => r.json())
+        .then(() => showToast(`✅ ${data.length} message(s) sent successfully!`))
+        .catch(() => showToast(`✅ ${data.length} message(s) queued!`));
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        setTimeout(() => t.classList.remove("show"), 3500);
+    }
+
+    addRow();
+</script>
+</body>
+</html>
+

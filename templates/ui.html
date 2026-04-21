@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Bulk Sender</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        .home-btn {
+            position: fixed; top: 20px; left: 20px;
+            background: rgba(255,255,255,0.1); color: #fff;
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 8px 16px; border-radius: 10px;
+            cursor: pointer; font-size: 0.9rem;
+            text-decoration: none; transition: background 0.2s; z-index: 100;
+        }
+        .home-btn:hover { background: rgba(255,255,255,0.2); }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            min-height: 100vh;
+            padding: 30px 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: auto;
+            display: flex;
+            gap: 24px;
+            align-items: flex-start;
+        }
+
+        .left-panel {
+            flex: 1;
+            position: sticky;
+            top: 30px;
+        }
+
+        .right-panel {
+            flex: 1;
+        }
+
+        @media (max-width: 900px) {
+            .container { flex-direction: column; }
+        }
+
+        /* HEADER */
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .header .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(37,211,102,0.12);
+            border: 1px solid rgba(37,211,102,0.25);
+            border-radius: 50px;
+            padding: 8px 20px;
+            margin-bottom: 14px;
+        }
+        .header .pill span { color: #25D366; font-size: 0.85rem; font-weight: 600; }
+        .header h1 { color: #fff; font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; }
+        .header h1 em { color: #25D366; font-style: normal; }
+        .header p { color: rgba(255,255,255,0.45); font-size: 0.9rem; margin-top: 8px; }
+
+        /* CARD */
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(14px);
+        }
+
+        .card-title {
+            color: #fff;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        /* TEXTAREA */
+        textarea#template {
+            width: 100%;
+            background: rgba(0,0,0,0.3);
+            border: 1.5px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            padding: 14px 16px;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.2s;
+            min-height: 100px;
+        }
+        textarea#template:focus { border-color: #25D366; }
+        textarea#template::placeholder { color: rgba(255,255,255,0.25); }
+
+        /* TABLE */
+        .table-wrap {
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+
+        thead tr { background: rgba(37,211,102,0.1); }
+
+        th {
+            padding: 12px 14px;
+            text-align: left;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: #25D366;
+        }
+
+        td {
+            padding: 8px 10px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+
+        tr:hover td { background: rgba(255,255,255,0.02); }
+
+        td input {
+            width: 100%;
+            background: rgba(0,0,0,0.25);
+            border: 1.5px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.875rem;
+            padding: 8px 10px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        td input:focus { border-color: #25D366; }
+        td input::placeholder { color: rgba(255,255,255,0.25); }
+
+        /* BUTTONS */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-ghost {
+            background: rgba(255,255,255,0.07);
+            border: 1.5px solid rgba(255,255,255,0.12);
+            color: #fff;
+        }
+        .btn-ghost:hover { background: rgba(255,255,255,0.13); }
+
+        .btn-danger {
+            background: rgba(231,76,60,0.12);
+            border: 1px solid rgba(231,76,60,0.25);
+            color: #e74c3c;
+            padding: 7px 12px;
+            font-size: 0.8rem;
+        }
+        .btn-danger:hover { background: rgba(231,76,60,0.3); }
+
+        .btn-send {
+            width: 100%;
+            justify-content: center;
+            background: linear-gradient(135deg, #25D366, #128C7E);
+            color: #fff;
+            padding: 14px;
+            font-size: 1rem;
+            border-radius: 14px;
+            box-shadow: 0 4px 20px rgba(37,211,102,0.3);
+            margin-top: 4px;
+        }
+        .btn-send:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(37,211,102,0.5);
+        }
+        .btn-send:active { transform: translateY(0); }
+
+        .actions-row { display: flex; gap: 10px; margin-top: 14px; }
+
+        /* PHONE PREVIEW */
+        .phone-frame {
+            background: #0b141a;
+            border-radius: 20px;
+            overflow: hidden;
+            border: 2px solid rgba(255,255,255,0.08);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+        }
+        .phone-header {
+            background: #1f2c34;
+            padding: 10px 14px 12px;
+        }
+        .phone-status-bar {
+            display: flex; justify-content: space-between;
+            font-size: 0.65rem; color: rgba(255,255,255,0.4); margin-bottom: 10px;
+        }
+        .phone-contact-bar {
+            display: flex; align-items: center; gap: 10px;
+        }
+        .phone-avatar {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: rgba(255,255,255,0.12); display: flex;
+            align-items: center; justify-content: center; font-size: 1.1rem;
+        }
+        .phone-contact-name {
+            color: #fff; font-size: 0.9rem; font-weight: 600;
+        }
+        .phone-chat {
+            background: #091519;
+            min-height: 300px;
+            padding: 16px 14px;
+            display: flex; flex-direction: column;
+        }
+        .wa-date-chip {
+            align-self: center;
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.45);
+            font-size: 0.65rem; font-weight: 500;
+            padding: 4px 12px; border-radius: 8px;
+            margin-bottom: 14px;
+        }
+        .wa-bubble {
+            align-self: flex-end;
+            background: #005c4b;
+            color: #e9edef;
+            font-size: 0.85rem;
+            line-height: 1.55;
+            padding: 8px 12px 4px;
+            border-radius: 10px 0 10px 10px;
+            max-width: 88%;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+        .wa-bubble-time {
+            text-align: right;
+            font-size: 0.6rem;
+            color: rgba(255,255,255,0.4);
+            margin-top: 4px;
+            padding-bottom: 2px;
+        }
+        .phone-input-bar {
+            background: #1f2c34;
+            padding: 8px 10px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .phone-input-field {
+            flex: 1; background: #2a3942; border-radius: 20px;
+            padding: 9px 14px; color: rgba(255,255,255,0.25);
+            font-size: 0.8rem;
+        }
+        .phone-mic {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: #25D366; display: flex;
+            align-items: center; justify-content: center; font-size: 0.9rem;
+        }
+
+        /* FORM */
+        .form-group { margin-bottom: 16px; }
+        .form-label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 6px;
+        }
+        .form-select {
+            width: 100%;
+            background: rgba(0,0,0,0.3);
+            border: 1.5px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.9rem;
+            padding: 10px 14px;
+            outline: none;
+            transition: border-color 0.2s;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='white' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 5.5l6.5 6.5 6.5-6.5'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+        }
+        .form-select:focus { border-color: #25D366; }
+        .form-select option { background: #1a2a32; color: #fff; }
+        .form-input {
+            width: 100%;
+            background: rgba(0,0,0,0.3);
+            border: 1.5px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.9rem;
+            padding: 10px 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-input:focus { border-color: #25D366; }
+        .form-input::placeholder { color: rgba(255,255,255,0.25); }
+        .form-input[readonly] { opacity: 0.6; cursor: not-allowed; }
+
+        /* PREVIEW */
+        .preview-bubble {
+            background: rgba(37,211,102,0.07);
+            border: 1.5px solid rgba(37,211,102,0.18);
+            border-radius: 0 16px 16px 16px;
+            padding: 14px 18px;
+            color: rgba(255,255,255,0.85);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            position: relative;
+            min-height: 52px;
+        }
+        .preview-bubble::before {
+            content: '';
+            position: absolute;
+            top: 0; left: -8px;
+            border-width: 0 8px 8px 0;
+            border-style: solid;
+            border-color: transparent rgba(37,211,102,0.18) transparent transparent;
+        }
+
+        /* TOAST */
+        .toast {
+            position: fixed;
+            bottom: 28px; left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: linear-gradient(135deg, #25D366, #128C7E);
+            color: #fff;
+            padding: 12px 28px;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+            transition: transform 0.4s cubic-bezier(0.175,0.885,0.32,1.275);
+            z-index: 999;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+
+        @media (max-width: 600px) {
+            .header h1 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<a class="home-btn" href="/">🏠 Home</a>
+<div class="header">
+    <div class="pill">
+        <span>📲 Chit Details</span>
+    </div>
+    <h1>Chit Details of <em id="currentMonthYear"></em> Month</h1>
+    <p>Send chit details and payment info to all members via WhatsApp</p>
+</div>
+
+<div class="container">
+
+    <!-- LEFT PANEL -->
+    <div class="left-panel">
+        <div class="card">
+            <div class="card-title">📱 WhatsApp Preview</div>
+            <div class="phone-frame">
+                <div class="phone-header">
+                    <div class="phone-status-bar">
+                        <span>9:41</span>
+                        <span>●●● WiFi 🔋</span>
+                    </div>
+                    <div class="phone-contact-bar">
+                        <div class="phone-avatar">👤</div>
+                        <div>
+                            <div class="phone-contact-name" id="previewName">John Doe</div>
+                            <div style="font-size:0.65rem; color:rgba(255,255,255,0.4);">online</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="phone-chat">
+                    <div class="wa-date-chip">Today</div>
+                    <div class="wa-bubble">
+                        <span id="waPreviewText">Details Loading Please wait...</span>
+                        <div class="wa-bubble-time" id="waPreviewTime">9:41 AM ✓✓</div>
+                    </div>
+                </div>
+                <div class="phone-input-bar">
+                    <div class="phone-input-field">Type a message</div>
+                    <div class="phone-mic">🎤</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+        <!-- DROPDOWNS -->
+        <div class="card">
+            <div class="card-title">📋 Details</div>
+
+            <div class="form-group">
+                <label class="form-label">📁 Chit </label>
+                <select class="form-select" id="chitFileSelect"></select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Name</label>
+                <select class="form-select" id="name">
+                    <option value="">Select Name</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Total Amount</label>
+                <input class="form-input" id="totalAmount" type="number" value="100000" readonly>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Chit Amount</label>
+                <input class="form-input" id="chitAmount" type="number" placeholder="Enter Chit Amount" oninput="calcDiscount()">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Discount Amount</label>
+                <input class="form-input" id="discountAmount" type="number" value="100000" readonly>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Amount Need to Pay</label>
+                <input class="form-input" id="amountNeedToPay" type="number" readonly>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Chit Number</label>
+                <input class="form-input" id="chitNumber" type="text" placeholder="Enter Chit Number" readonly>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Current Date</label>
+                <input class="form-input" id="currentDate" type="date">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Chit Remaining</label>
+                <input class="form-input" id="chitRemaining" type="number" placeholder="Enter Chit Remaining" readonly>
+            </div>
+        </div>
+
+        <!-- SEND -->
+        <button class="btn btn-send" onclick="sendMessages()">🚀 Send All Messages</button>
+    </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    const urlParams = new URLSearchParams(window.location.search);
+    let chitFile = urlParams.get("chitFile") || "";
+
+    function setFieldsDisabled(disabled) {
+        document.querySelectorAll('.right-panel .form-input, .right-panel .form-select, .right-panel .form-textarea, .btn-send').forEach(el => {
+            if (el.id !== 'chitFileSelect') {
+                el.disabled = disabled;
+                el.style.opacity = disabled ? '0.4' : '1';
+            }
+        });
+    }
+
+    // Load chit files dropdown
+    fetch("/get-chit-files")
+        .then(r => r.json())
+        .then(files => {
+            const sel = document.getElementById("chitFileSelect");
+            sel.innerHTML = '<option value="">-- Select Chit --</option>';
+            files.forEach(f => {
+                const opt = document.createElement("option");
+                opt.value = f;
+                opt.textContent = f.replace(".xlsx", "");
+                if (f === chitFile) opt.selected = true;
+                sel.appendChild(opt);
+            });
+            if (chitFile) loadData();
+            else setFieldsDisabled(true);
+        });
+
+    document.getElementById("chitFileSelect").addEventListener("change", function() {
+        if (this.value) {
+            window.location.href = `/chit-details?chitFile=${this.value}`;
+        } else {
+            setFieldsDisabled(true);
+        }
+    });
+
+    function loadData() {
+        setFieldsDisabled(false);
+
+        // Load names from Excel
+        fetch(`/get-names?chitFile=${chitFile}`)
+            .then(r => r.json())
+            .then(data => {
+                const sel = document.getElementById("name");
+                sel.innerHTML = '<option value="">Select Name</option>';
+                data.forEach(item => {
+                    const opt = document.createElement("option");
+                    opt.value = item.name;
+                    opt.textContent = item.name;
+                    opt.dataset.mobile = item.mobile;
+                    sel.appendChild(opt);
+                });
+            });
+
+        // Load chit number for current month
+        fetch(`/get-chit-number?chitFile=${chitFile}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById("chitNumber").value = data.chitNumber;
+                document.getElementById("chitRemaining").value = data.chitRemaining;
+            });
+    }
+
+    // ...existing code (updatePreview, calcDiscount)...
+
+    function updatePreview() {
+        const name = document.getElementById("name").value || "John Doe";
+        const totalAmount = document.getElementById("totalAmount").value || "0";
+        const chitAmount = document.getElementById("chitAmount").value || "0";
+        const discountAmount = document.getElementById("discountAmount").value || "0";
+        const chitNumber = document.getElementById("chitNumber").value || "-";
+        const currentDate = document.getElementById("currentDate").value || "-";
+        const chitRemaining = document.getElementById("chitRemaining").value || "-";
+
+        const amountNeedToPay = document.getElementById("amountNeedToPay").value || "0";
+
+        const dateRaw = document.getElementById("currentDate").value || "";
+        let formattedDate = "-";
+        if (dateRaw) {
+            const [y, m, d] = dateRaw.split("-");
+            formattedDate = `${d}-${m}-${y}`;
+        }
+
+        const msg = `Here are the chit details:\n\n🎯 *Chit Taken By:* ${name}\n📌 *Chit Number:* ${chitNumber}\n💰 *Total Amount:* ₹${totalAmount}\n🏷️ *Chit Amount:* ₹${chitAmount}\n📅 *Date:* ${formattedDate}\n🔄 *Chit Remaining:* ${chitRemaining}\n\n💳 *Amount Need to Pay:* *₹${amountNeedToPay}*\n\nThank you! 🎉\n\n———————————\n\nசிட் விவரங்கள்:\n\n🎯 *சிட் எடுத்தவர்:* ${name}\n📌 *சிட் எண்:* ${chitNumber}\n💰 *மொத்த தொகை:* ₹${totalAmount}\n🏷️ *சிட் தொகை:* ₹${chitAmount}\n📅 *தேதி:* ${formattedDate}\n🔄 *மீதமுள்ள சிட்:* ${chitRemaining}\n\n💳 *செலுத்த வேண்டிய தொகை:* *₹${amountNeedToPay}*\n\nநன்றி! 🎉`;
+
+        document.getElementById("waPreviewText").innerText = msg;
+        document.getElementById("previewName").textContent = name;
+        const now = new Date();
+        document.getElementById("waPreviewTime").textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + ' ✓✓';
+    }
+
+    document.getElementById("currentDate").valueAsDate = new Date();
+    document.getElementById("waPreviewTime").textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + ' ✓✓';
+    document.getElementById("currentMonthYear").textContent = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+
+    document.addEventListener("change", updatePreview);
+
+    function calcDiscount() {
+        const total = parseFloat(document.getElementById("totalAmount").value) || 0;
+        const chit = parseFloat(document.getElementById("chitAmount").value) || 0;
+        document.getElementById("discountAmount").value = total - chit;
+        document.getElementById("amountNeedToPay").value = chit ? (chit / 20) : 0;
+        updatePreview();
+    }
+
+    function sendMessages() {
+        const data = {
+            chitFile: chitFile,
+            name: document.getElementById("name").value,
+            totalAmount: document.getElementById("totalAmount").value,
+            chitAmount: document.getElementById("chitAmount").value,
+            discountAmount: document.getElementById("discountAmount").value,
+            chitNumber: document.getElementById("chitNumber").value,
+            currentDate: document.getElementById("currentDate").value,
+            chitRemaining: document.getElementById("chitRemaining").value
+        };
+        if (!data.name) { showToast("⚠️ Please select a name!"); return; }
+        fetch("/send-campaign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.results && data.results.length > 0) {
+                let i = 0;
+                function openNext() {
+                    if (i < data.results.length) {
+                        window.open(data.results[i].url, '_blank');
+                        i++;
+                        setTimeout(openNext, 1500);
+                    }
+                }
+                openNext();
+                showToast(`✅ Sending to ${data.results.length} members!`);
+            } else {
+                showToast("⚠️ No members found!");
+            }
+        })
+        .catch(() => showToast("❌ Error sending messages!"));
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        setTimeout(() => t.classList.remove("show"), 3500);
+    }
+</script>
+</body>
+</html>
+

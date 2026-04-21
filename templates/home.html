@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chit Fund Manager</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            text-align: center;
+        }
+        .title {
+            color: #fff;
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+        .subtitle {
+            color: rgba(255,255,255,0.6);
+            font-size: 1rem;
+            margin-bottom: 48px;
+        }
+        .cards {
+            display: flex;
+            gap: 32px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .card {
+            background: rgba(255,255,255,0.07);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 20px;
+            padding: 48px 40px;
+            width: 300px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+        }
+        .card:hover {
+            transform: translateY(-8px);
+            background: rgba(255,255,255,0.12);
+            border-color: rgba(255,255,255,0.25);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        .card-icon {
+            font-size: 3.5rem;
+            margin-bottom: 20px;
+        }
+        .card-title {
+            color: #fff;
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .card-desc {
+            color: rgba(255,255,255,0.5);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .card-chit { border-top: 3px solid #25D366; }
+        .card-reminder { border-top: 3px solid #FF9800; }
+        .card-tomorrow { border-top: 3px solid #E91E63; }
+        .chit-selector {
+            margin-bottom: 36px;
+        }
+        .chit-selector label {
+            color: rgba(255,255,255,0.6);
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 8px;
+            display: block;
+        }
+        .chit-selector select {
+            padding: 10px 18px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 12px;
+            color: #fff;
+            font-size: 1rem;
+            font-family: 'Inter', sans-serif;
+            outline: none;
+            min-width: 250px;
+            cursor: pointer;
+        }
+        .chit-selector select:focus { border-color: #25D366; }
+        .chit-selector select option { background: #1a2a3a; color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title">📊 Chit Fund Manager</div>
+        <div class="subtitle">Choose an option to get started</div>
+
+        <div class="cards">
+            <a class="card card-chit" id="linkChitDetails" href="/chit-details">
+                <div class="card-icon">💰</div>
+                <div class="card-title">Send Chit Details</div>
+                <div class="card-desc">Send chit details to all members via WhatsApp</div>
+            </a>
+            <a class="card card-reminder" id="linkReminder" href="/reminder">
+                <div class="card-icon">🔔</div>
+                <div class="card-title">Send Reminder</div>
+                <div class="card-desc">Send payment reminder messages to members</div>
+            </a>
+            <a class="card card-tomorrow" id="linkTomorrow" href="/chit-tomorrow">
+                <div class="card-icon">📢</div>
+                <div class="card-title">Chit Tomorrow Reminder</div>
+                <div class="card-desc">Notify all members that chit will happen tomorrow</div>
+            </a>
+        </div>
+    </div>
+</body>
+</html>
