@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - User Management</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        .container { max-width: 700px; margin: 0 auto; }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .back-btn {
+            color: rgba(255,255,255,0.6);
+            text-decoration: none;
+            font-size: 1.5rem;
+            transition: color 0.3s;
+        }
+        .back-btn:hover { color: #fff; }
+        .home-btn {
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 12px;
+            color: #fff;
+            font-size: 0.9rem;
+            font-family: 'Inter', sans-serif;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        .home-btn:hover {
+            background: rgba(37,211,102,0.2);
+            border-color: #25D366;
+        }
+        .title { color: #fff; font-size: 1.6rem; font-weight: 700; }
+        .subtitle { color: rgba(255,255,255,0.5); font-size: 0.85rem; }
+
+        .add-form {
+            background: rgba(255,255,255,0.07);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .form-title { color: #fff; font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; }
+        .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+        .form-group { flex: 1; min-width: 120px; }
+        .form-group label {
+            color: rgba(255,255,255,0.6);
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-bottom: 4px;
+            display: block;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            font-family: 'Inter', sans-serif;
+            outline: none;
+        }
+        .form-group input:focus, .form-group select:focus { border-color: #25D366; }
+        .form-group input::placeholder { color: rgba(255,255,255,0.3); }
+        .form-group select option { background: #1a2a3a; color: #fff; }
+        .btn-add {
+            padding: 10px 24px;
+            background: linear-gradient(135deg, #25D366, #128C7E);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: transform 0.2s;
+            white-space: nowrap;
+        }
+        .btn-add:hover { transform: translateY(-2px); }
+
+        .user-list { display: flex; flex-direction: column; gap: 12px; }
+        .user-card {
+            background: rgba(255,255,255,0.07);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            padding: 18px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        .user-info { flex: 1; }
+        .user-name { color: #fff; font-size: 1rem; font-weight: 600; }
+        .user-email { color: rgba(255,255,255,0.4); font-size: 0.8rem; display: block; margin-top: 2px; }
+        .user-role {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        .role-admin { background: rgba(244,67,54,0.2); color: #F44336; }
+        .role-user { background: rgba(33,150,243,0.2); color: #2196F3; }
+        .user-actions { display: flex; gap: 8px; }
+        .btn-edit, .btn-delete {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .btn-edit { background: rgba(33,150,243,0.2); color: #2196F3; }
+        .btn-delete { background: rgba(244,67,54,0.2); color: #F44336; }
+        .btn-edit:hover, .btn-delete:hover { transform: translateY(-2px); }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 14px 24px;
+            border-radius: 12px;
+            color: #fff;
+            font-size: 0.9rem;
+            font-weight: 500;
+            z-index: 1000;
+            display: none;
+            animation: slideIn 0.3s ease;
+        }
+        .toast-success { background: #25D366; }
+        .toast-error { background: #F44336; }
+        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* Edit Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 500;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: #1a2a3a;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 16px;
+            padding: 28px;
+            width: 380px;
+            max-width: 90%;
+        }
+        .modal-title { color: #fff; font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; }
+        .modal .form-group { margin-bottom: 12px; }
+        .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+        .btn-cancel {
+            flex: 1;
+            padding: 10px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+        }
+        .btn-save {
+            flex: 1;
+            padding: 10px;
+            background: linear-gradient(135deg, #25D366, #128C7E);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+        }
+
+        @media (max-width: 600px) {
+            .form-row { flex-direction: column; }
+            .user-card { flex-direction: column; align-items: flex-start; }
+            .user-actions { width: 100%; }
+            .btn-edit, .btn-delete { flex: 1; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <a href="/" class="back-btn">←</a>
+                <div>
+                    <div class="title">👑 Admin Panel</div>
+                    <div class="subtitle">Manage users and access</div>
+                </div>
+            </div>
+            <a href="/" class="home-btn">🏠 Home</a>
+        </div>
+
+        <div class="add-form">
+            <div class="form-title">➕ Add New User</div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="newUsername" placeholder="Enter username">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="newPassword" placeholder="Enter password">
+                </div>
+                <div class="form-group">
+                    <label>Gmail ID</label>
+                    <input type="email" id="newEmail" placeholder="user@gmail.com">
+                </div>
+                <div class="form-group" style="max-width:130px">
+                    <label>Role</label>
+                    <select id="newRole">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <button class="btn-add" onclick="addUser()">Add User</button>
+            </div>
+        </div>
+
+        <div class="user-list" id="userList"></div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <div class="modal-title">✏️ Edit User</div>
+            <input type="hidden" id="editUsername">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="editUsernameDisplay" disabled style="opacity:0.5">
+            </div>
+            <div class="form-group">
+                <label>New Password (leave blank to keep current)</label>
+                <input type="password" id="editPassword" placeholder="New password">
+            </div>
+            <div class="form-group">
+                <label>Gmail ID</label>
+                <input type="email" id="editEmail" placeholder="user@gmail.com">
+            </div>
+            <div class="form-group">
+                <label>Role</label>
+                <select id="editRole">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeEditModal()">Cancel</button>
+                <button class="btn-save" onclick="saveEditUser()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        function showToast(msg, type) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast toast-' + type;
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 3000);
+        }
+
+        async function loadUsers() {
+            const resp = await fetch('/get-users');
+            const users = await resp.json();
+            const list = document.getElementById('userList');
+            list.innerHTML = '';
+            users.forEach(u => {
+                const roleClass = u.role === 'admin' ? 'role-admin' : 'role-user';
+                const emailDisplay = u.email ? `<span class="user-email">📧 ${u.email}</span>` : '';
+                list.innerHTML += `
+                    <div class="user-card">
+                        <div class="user-info">
+                            <span class="user-name">${u.username}</span>
+                            <span class="user-role ${roleClass}">${u.role}</span>
+                            ${emailDisplay}
+                        </div>
+                        <div class="user-actions">
+                            <button class="btn-edit" onclick="openEditModal('${u.username}','${u.role}','${u.email||''}')">✏️ Edit</button>
+                            <button class="btn-delete" onclick="deleteUser('${u.username}')">🗑️ Delete</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        async function addUser() {
+            const username = document.getElementById('newUsername').value.trim();
+            const password = document.getElementById('newPassword').value.trim();
+            const email = document.getElementById('newEmail').value.trim();
+            const role = document.getElementById('newRole').value;
+            if (!username || !password) { showToast('Username and password required', 'error'); return; }
+            const resp = await fetch('/add-user', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password, role, email})
+            });
+            const data = await resp.json();
+            if (data.success) {
+                showToast('User added successfully', 'success');
+                document.getElementById('newUsername').value = '';
+                document.getElementById('newPassword').value = '';
+                document.getElementById('newEmail').value = '';
+                loadUsers();
+            } else {
+                showToast(data.error, 'error');
+            }
+        }
+
+        async function deleteUser(username) {
+            if (!confirm(`Delete user "${username}"?`)) return;
+            const resp = await fetch('/delete-user', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username})
+            });
+            const data = await resp.json();
+            if (data.success) {
+                showToast('User deleted', 'success');
+                loadUsers();
+            } else {
+                showToast(data.error, 'error');
+            }
+        }
+
+        function openEditModal(username, role, email) {
+            document.getElementById('editUsername').value = username;
+            document.getElementById('editUsernameDisplay').value = username;
+            document.getElementById('editPassword').value = '';
+            document.getElementById('editEmail').value = email || '';
+            document.getElementById('editRole').value = role;
+            document.getElementById('editModal').classList.add('active');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('active');
+        }
+
+        async function saveEditUser() {
+            const username = document.getElementById('editUsername').value;
+            const password = document.getElementById('editPassword').value.trim();
+            const email = document.getElementById('editEmail').value.trim();
+            const role = document.getElementById('editRole').value;
+            const resp = await fetch('/update-user', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password, role, email})
+            });
+            const data = await resp.json();
+            if (data.success) {
+                showToast('User updated', 'success');
+                closeEditModal();
+                loadUsers();
+            } else {
+                showToast(data.error, 'error');
+            }
+        }
+
+        loadUsers();
+    </script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - WhatsApp API</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #0f2027, #203a43, #2c5364); min-height: 100vh; padding: 30px 20px; }
+        .back-btn { position: fixed; top: 20px; left: 20px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 10px; cursor: pointer; font-size: 0.9rem; text-decoration: none; transition: background 0.2s; z-index: 100; }
+        .back-btn:hover { background: rgba(255,255,255,0.2); }
+        .header { text-align: center; margin-bottom: 32px; }
+        .header .pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(156,39,176,0.15); color: #CE93D8; padding: 6px 16px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; margin-bottom: 12px; }
+        .header h1 { color: #fff; font-size: 2rem; font-weight: 700; margin-bottom: 6px; }
+        .header p { color: rgba(255,255,255,0.5); font-size: 0.95rem; }
+        .container { max-width: 600px; margin: auto; }
+        .card { background: rgba(255,255,255,0.05); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 24px; margin-bottom: 20px; }
+        .card-title { color: #fff; font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; }
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; color: rgba(255,255,255,0.6); font-size: 0.82rem; font-weight: 500; margin-bottom: 6px; }
+        .form-input { width: 100%; padding: 12px 14px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; color: #fff; font-size: 0.88rem; outline: none; font-family: 'Inter', sans-serif; transition: border 0.2s; }
+        .form-input:focus { border-color: #CE93D8; }
+        .form-input::placeholder { color: rgba(255,255,255,0.25); }
+        .btn-save { width: 100%; padding: 14px; background: linear-gradient(135deg, #9C27B0, #7B1FA2); color: #fff; border: none; border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+        .btn-save:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(156,39,176,0.3); }
+        .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; margin-bottom: 16px; }
+        .status-ok { background: rgba(37,211,102,0.15); color: #25D366; }
+        .status-no { background: rgba(255,80,80,0.15); color: #FF5252; }
+        .info-box { background: rgba(33,150,243,0.1); border: 1px solid rgba(33,150,243,0.2); border-radius: 10px; padding: 14px; margin-bottom: 16px; }
+        .info-box-title { color: #64B5F6; font-size: 0.82rem; font-weight: 600; margin-bottom: 6px; }
+        .info-box p { color: rgba(255,255,255,0.5); font-size: 0.78rem; line-height: 1.6; }
+        .info-box a { color: #64B5F6; }
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: rgba(0,0,0,0.85); color: #fff; padding: 12px 28px; border-radius: 12px; font-size: 0.9rem; transition: transform 0.4s ease; z-index: 1000; }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        @media (max-width: 600px) {
+            .back-btn { position: static; display: inline-block; margin-bottom: 16px; }
+            .header h1 { font-size: 1.5rem; }
+            body { padding: 16px 12px; }
+        }
+    </style>
+</head>
+<body>
+    <a class="back-btn" href="/">🏠 Home</a>
+
+    <div class="header">
+        <div class="pill">⚙️ SETTINGS</div>
+        <h1>WhatsApp API Configuration</h1>
+        <p>Configure your WhatsApp Business API to send messages directly</p>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-title">📡 API Status</div>
+            <div class="status-badge status-no" id="apiStatus">❌ Not Configured</div>
+
+            <div class="info-box">
+                <div class="info-box-title">ℹ️ How to get WhatsApp API credentials</div>
+                <p>
+                    1. Go to <a href="https://developers.facebook.com" target="_blank">Meta for Developers</a><br>
+                    2. Create a new app → Select "Business" type<br>
+                    3. Add "WhatsApp" product to your app<br>
+                    4. Go to WhatsApp → API Setup<br>
+                    5. Copy the <strong>Temporary Access Token</strong> and <strong>Phone Number ID</strong><br>
+                    6. Add recipient numbers in "To" field to whitelist them
+                </p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">🔑 API Credentials</div>
+
+            <div class="form-group">
+                <label class="form-label">WhatsApp API Token</label>
+                <input class="form-input" id="apiToken" type="password" placeholder="Paste your access token here...">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Phone Number ID</label>
+                <input class="form-input" id="phoneNumberId" type="text" placeholder="e.g. 123456789012345">
+            </div>
+
+            <button class="btn-save" onclick="saveConfig()">💾 Save Configuration</button>
+        </div>
+
+        <div class="card">
+            <div class="card-title">🧪 Test Connection</div>
+            <div class="form-group">
+                <label class="form-label">Test Phone Number (with country code, e.g. 919876543210)</label>
+                <input class="form-input" id="testPhone" type="text" placeholder="919876543210">
+            </div>
+            <button class="btn-save" onclick="testSend()" style="background: linear-gradient(135deg, #25D366, #128C7E);">📤 Send Test Message</button>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+<script>
+    // Load current config
+    fetch("/get-config")
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById("phoneNumberId").value = data.whatsapp_phone_number_id || "";
+            const badge = document.getElementById("apiStatus");
+            if (data.configured) {
+                badge.className = "status-badge status-ok";
+                badge.textContent = "✅ Configured & Ready";
+            } else {
+                badge.className = "status-badge status-no";
+                badge.textContent = "❌ Not Configured";
+            }
+        });
+
+    function saveConfig() {
+        const token = document.getElementById("apiToken").value.trim();
+        const phoneId = document.getElementById("phoneNumberId").value.trim();
+
+        if (!token && !phoneId) { showToast("⚠️ Please fill in at least one field!"); return; }
+
+        const body = {};
+        if (token) body.whatsapp_api_token = token;
+        if (phoneId) body.whatsapp_phone_number_id = phoneId;
+
+        fetch("/save-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast("✅ Configuration saved!");
+                document.getElementById("apiToken").value = "";
+                // Reload status
+                setTimeout(() => location.reload(), 1000);
+            }
+        })
+        .catch(() => showToast("❌ Error saving!"));
+    }
+
+    function testSend() {
+        const phone = document.getElementById("testPhone").value.trim();
+        if (!phone) { showToast("⚠️ Enter a phone number!"); return; }
+
+        showToast("📤 Sending test message...");
+        fetch("/send-wa-direct", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone: phone, message: "✅ Test message from Chit Fund Manager! WhatsApp API is working." })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast("✅ Test message sent successfully!");
+            } else {
+                showToast("❌ Failed: " + (data.error || "Unknown error"));
+            }
+        })
+        .catch(() => showToast("❌ Error sending test!"));
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        setTimeout(() => t.classList.remove("show"), 4000);
+    }
+</script>
+</body>
+</html>

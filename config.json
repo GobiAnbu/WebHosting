@@ -1,0 +1,15 @@
+{
+    "whatsapp_api_token": "",
+    "whatsapp_phone_number_id": "",
+    "sms_api_key": "",
+    "users": {
+        "admin": {
+            "password": "admin123",
+            "role": "admin"
+        },
+        "test": {
+            "password": "test",
+            "role": "user"
+        }
+    }
+}

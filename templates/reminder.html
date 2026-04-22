@@ -68,6 +68,17 @@
         .right-panel { flex: 1; }
         @media (max-width: 900px) {
             .container { flex-direction: column; }
+            .left-panel { position: static; width: 100%; }
+            .right-panel { width: 100%; }
+            .phone-frame { width: 100% !important; max-width: 100%; }
+            .back-btn { position: static; display: inline-block; margin-bottom: 16px; }
+            .header h1 { font-size: 1.5rem; }
+            .header p { font-size: 0.8rem; }
+            .card { padding: 16px; }
+            body { padding: 16px 12px; }
+        }
+        @media (max-width: 600px) {
+            .header h1 { font-size: 1.3rem; }
         }
         .card {
             background: rgba(255,255,255,0.05);
@@ -318,9 +329,13 @@
 
 This is a friendly reminder to pay your chit amount of *₹{amount}* for this month.
 
+💳 Gpay/PhonePe to *{gpay}*
+
 Please make the payment at the earliest if not done.
 
 நட்பான நினைவூட்டல்: இந்த மாதத்திற்கான உங்கள் சிட் தொகை *₹{amount}* செலுத்தவும், இன்னும் செலுத்தவில்லை என்றால்.
+
+💳 Gpay/PhonePe க்கு *{gpay}*
 
 Thank you! 🙏</textarea>
                 </div>
@@ -343,8 +358,6 @@ Thank you! 🙏</textarea>
                 el.style.opacity = disabled ? '0.4' : '1';
             }
         });
-        document.getElementById("memberChips").style.opacity = disabled ? '0.4' : '1';
-        document.getElementById("memberChips").style.pointerEvents = disabled ? 'none' : 'auto';
     }
 
     // Load chit files dropdown
@@ -374,6 +387,7 @@ Thank you! 🙏</textarea>
 
     let allMembers = [];
     let chitAmount = "0";
+    let gpayNumber = "";
 
     function loadData() {
         setFieldsDisabled(false);
@@ -383,16 +397,6 @@ Thank you! 🙏</textarea>
             .then(r => r.json())
             .then(data => {
                 allMembers = data;
-                const chips = document.getElementById("memberChips");
-                chips.innerHTML = "";
-                data.forEach((item, i) => {
-                    const chip = document.createElement("span");
-                    chip.className = "chip selected";
-                    chip.textContent = item.name;
-                    chip.dataset.index = i;
-                    chip.onclick = () => chip.classList.toggle("selected");
-                    chips.appendChild(chip);
-                });
             });
 
         // Load amount from chitNumberDetails
@@ -400,6 +404,7 @@ Thank you! 🙏</textarea>
             .then(r => r.json())
             .then(data => {
                 chitAmount = data.amountPerPerson || "0";
+                gpayNumber = data.gpay || "";
                 updatePreview();
             });
     }
@@ -413,7 +418,8 @@ Thank you! 🙏</textarea>
     function updatePreview() {
         const msg = document.getElementById("reminderMessage").value
             .replace(/{name}/g, "Member")
-            .replace(/{amount}/g, chitAmount);
+            .replace(/{amount}/g, chitAmount)
+            .replace(/{gpay}/g, gpayNumber);
         document.getElementById("waPreviewText").innerText = msg;
         const now = new Date();
         document.getElementById("waPreviewTime").textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + ' ✓✓';
@@ -421,22 +427,14 @@ Thank you! 🙏</textarea>
     updatePreview();
 
     function sendReminder() {
-        const chips = document.querySelectorAll(".chip.selected");
-        if (chips.length === 0) { showToast("⚠️ Please select at least one member!"); return; }
-
         const message = document.getElementById("reminderMessage").value;
         if (!message.trim()) { showToast("⚠️ Please enter a message!"); return; }
 
-        const selectedMembers = [];
-        chips.forEach(chip => {
-            const idx = parseInt(chip.dataset.index);
-            selectedMembers.push(allMembers[idx]);
-        });
-
+        showToast("📤 Sending reminders...");
         fetch("/send-reminder", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: message, members: selectedMembers, chitFile: chitFile })
+            body: JSON.stringify({ message: message, members: allMembers, chitFile: chitFile })
         })
         .then(r => r.json())
         .then(data => {
@@ -450,7 +448,7 @@ Thank you! 🙏</textarea>
                     }
                 }
                 openNext();
-                showToast(`✅ Sending reminder to ${data.results.length} members!`);
+                showToast(`✅ Sending to ${data.results.length} members!`);
             } else {
                 showToast("⚠️ No members found!");
             }
