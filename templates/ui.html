@@ -614,19 +614,10 @@
         })
         .then(r => r.json())
         .then(data => {
-            if (data.results && data.results.length > 0) {
-                let i = 0;
-                function openNext() {
-                    if (i < data.results.length) {
-                        window.open(data.results[i].url, '_blank');
-                        i++;
-                        setTimeout(openNext, 1500);
-                    }
-                }
-                openNext();
-                showToast(`✅ Sending to ${data.results.length} members!`);
+            if (data.success) {
+                showToast("✅ Message sent successfully via WhatsApp!");
             } else {
-                showToast("⚠️ No members found!");
+                showToast("❌ Failed: " + (data.error || "Unknown error"));
             }
         })
         .catch(() => showToast("❌ Error sending messages!"));

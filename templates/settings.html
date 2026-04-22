@@ -41,59 +41,64 @@
     </style>
 </head>
 <body>
-    <a class="back-btn" href="/">🏠 Home</a>
+<a class="back-btn" href="/">🏠 Home</a>
 
-    <div class="header">
-        <div class="pill">⚙️ SETTINGS</div>
-        <h1>WhatsApp API Configuration</h1>
-        <p>Configure your WhatsApp Business API to send messages directly</p>
-    </div>
+<div class="header">
+    <div class="pill">⚙️ SETTINGS</div>
+    <h1>WhatsApp API Configuration</h1>
+    <p>Configure your WhatsApp Business API to send messages directly</p>
+</div>
 
-    <div class="container">
-        <div class="card">
-            <div class="card-title">📡 API Status</div>
-            <div class="status-badge status-no" id="apiStatus">❌ Not Configured</div>
+<div class="container">
+    <div class="card">
+        <div class="card-title">📡 API Status</div>
+        <div class="status-badge status-no" id="apiStatus">❌ Not Configured</div>
 
-            <div class="info-box">
-                <div class="info-box-title">ℹ️ How to get WhatsApp API credentials</div>
-                <p>
-                    1. Go to <a href="https://developers.facebook.com" target="_blank">Meta for Developers</a><br>
-                    2. Create a new app → Select "Business" type<br>
-                    3. Add "WhatsApp" product to your app<br>
-                    4. Go to WhatsApp → API Setup<br>
-                    5. Copy the <strong>Temporary Access Token</strong> and <strong>Phone Number ID</strong><br>
-                    6. Add recipient numbers in "To" field to whitelist them
-                </p>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-title">🔑 API Credentials</div>
-
-            <div class="form-group">
-                <label class="form-label">WhatsApp API Token</label>
-                <input class="form-input" id="apiToken" type="password" placeholder="Paste your access token here...">
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Phone Number ID</label>
-                <input class="form-input" id="phoneNumberId" type="text" placeholder="e.g. 123456789012345">
-            </div>
-
-            <button class="btn-save" onclick="saveConfig()">💾 Save Configuration</button>
-        </div>
-
-        <div class="card">
-            <div class="card-title">🧪 Test Connection</div>
-            <div class="form-group">
-                <label class="form-label">Test Phone Number (with country code, e.g. 919876543210)</label>
-                <input class="form-input" id="testPhone" type="text" placeholder="919876543210">
-            </div>
-            <button class="btn-save" onclick="testSend()" style="background: linear-gradient(135deg, #25D366, #128C7E);">📤 Send Test Message</button>
+        <div class="info-box">
+            <div class="info-box-title">ℹ️ How to get WhatsApp API credentials</div>
+            <p>
+                1. Go to <a href="https://developers.facebook.com" target="_blank">Meta for Developers</a><br>
+                2. Create a new app → Select "Business" type<br>
+                3. Add "WhatsApp" product to your app<br>
+                4. Go to WhatsApp → API Setup<br>
+                5. Copy the <strong>Temporary Access Token</strong> and <strong>Phone Number ID</strong><br>
+                6. Add recipient numbers in "To" field to whitelist them
+            </p>
         </div>
     </div>
 
-    <div class="toast" id="toast"></div>
+    <div class="card">
+        <div class="card-title">🔑 Update API Token</div>
+        <div class="info-box" style="margin-bottom:16px;">
+            <div class="info-box-title">⚠️ Temporary tokens expire every 24 hours</div>
+            <p>
+                Go to <a href="https://developers.facebook.com" target="_blank" style="color:#25D366;">Meta Developer Dashboard</a> → Your App → WhatsApp → API Setup → Copy new token and paste below.
+            </p>
+        </div>
+        <div class="form-group">
+            <label class="form-label">WhatsApp API Token</label>
+            <input class="form-input" id="apiToken" type="password" placeholder="Paste your new access token here...">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Phone Number ID</label>
+            <input class="form-input" id="phoneNumberId" type="text" placeholder="e.g. 123456789012345">
+        </div>
+
+        <button class="btn-save" style="background: linear-gradient(135deg, #FF9800, #F57C00);" onclick="saveConfig()">💾 Update Token</button>
+    </div>
+
+    <div class="card">
+        <div class="card-title">🧪 Test WhatsApp</div>
+        <div class="form-group">
+            <label class="form-label">Test Phone Number (with country code, e.g. 919876543210)</label>
+            <input class="form-input" id="testPhone" type="text" placeholder="919876543210">
+        </div>
+        <button class="btn-save" onclick="testSend()" style="background: linear-gradient(135deg, #25D366, #128C7E);">📤 Send Test Message</button>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
 
 <script>
     // Load current config
@@ -105,22 +110,16 @@
             if (data.configured) {
                 badge.className = "status-badge status-ok";
                 badge.textContent = "✅ Configured & Ready";
-            } else {
-                badge.className = "status-badge status-no";
-                badge.textContent = "❌ Not Configured";
             }
         });
 
     function saveConfig() {
         const token = document.getElementById("apiToken").value.trim();
         const phoneId = document.getElementById("phoneNumberId").value.trim();
-
         if (!token && !phoneId) { showToast("⚠️ Please fill in at least one field!"); return; }
-
         const body = {};
         if (token) body.whatsapp_api_token = token;
         if (phoneId) body.whatsapp_phone_number_id = phoneId;
-
         fetch("/save-config", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -129,10 +128,8 @@
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                showToast("✅ Configuration saved!");
+                showToast("✅ Token updated!");
                 document.getElementById("apiToken").value = "";
-                // Reload status
-                setTimeout(() => location.reload(), 1000);
             }
         })
         .catch(() => showToast("❌ Error saving!"));

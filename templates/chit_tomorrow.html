@@ -256,11 +256,11 @@
 
                 <div class="form-group">
                     <label class="form-label">Message</label>
-                    <textarea class="form-textarea" id="reminderMessage" placeholder="Type your reminder message here...">🔔 *Reminder: Chit Tomorrow!*
+                    <textarea class="form-textarea" id="reminderMessage" placeholder="Type your reminder message here...">🔔 *Reminder: {chitName} - Chit Tomorrow!*
 
 Hi {name} 👋,
 
-This is a reminder that our chit will be conducted *tomorrow ({date})*.
+This is a reminder that our chit *{chitName}* will be conducted *tomorrow ({date})*.
 
 📌 *Chit Number:* {chitNumber}
 
@@ -270,11 +270,11 @@ Please make sure to be available if you are willing to take the chit.
 
 ———————————
 
-🔔 *நினைவூட்டல்: நாளை சிட்!*
+🔔 *நினைவூட்டல்: {chitName} - நாளை சிட்!*
 
 வணக்கம் {name} 👋,
 
-நாளை *({date})* நமது சிட் நடைபெறும் என்பதை நினைவூட்டுகிறோம்.
+நாளை *({date})* நமது *{chitName}* சிட் நடைபெறும் என்பதை நினைவூட்டுகிறோம்.
 
 📌 *சிட் எண்:* {chitNumber}
 
@@ -343,6 +343,7 @@ Please make sure to be available if you are willing to take the chit.
     document.getElementById("waPreviewTime").textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + ' ✓✓';
 
     let contactNumber = "";
+    let chitName = "";
 
     function loadData() {
         setFieldsDisabled(false);
@@ -353,6 +354,7 @@ Please make sure to be available if you are willing to take the chit.
             .then(data => {
                 document.getElementById("chitNumber").value = data.chitNumber;
                 contactNumber = data.contactNumber || "";
+                chitName = data.chitName || chitFile.replace(".xlsx", "");
                 updatePreview();
             });
     }
@@ -363,6 +365,7 @@ Please make sure to be available if you are willing to take the chit.
     function updatePreview() {
         const chitNumber = document.getElementById("chitNumber").value || "-";
         const msg = document.getElementById("reminderMessage").value
+            .replace(/{chitName}/g, chitName)
             .replace(/{name}/g, "Member")
             .replace(/{date}/g, tomorrowStr)
             .replace(/{chitNumber}/g, chitNumber)
@@ -387,19 +390,10 @@ Please make sure to be available if you are willing to take the chit.
         })
         .then(r => r.json())
         .then(data => {
-            if (data.results && data.results.length > 0) {
-                let i = 0;
-                function openNext() {
-                    if (i < data.results.length) {
-                        window.open(data.results[i].url, '_blank');
-                        i++;
-                        setTimeout(openNext, 1500);
-                    }
-                }
-                openNext();
-                showToast(`✅ Sending to ${data.results.length} members!`);
+            if (data.success) {
+                showToast("✅ Tomorrow reminder sent successfully via WhatsApp!");
             } else {
-                showToast("⚠️ No members found!");
+                showToast("❌ Failed: " + (data.error || "Unknown error"));
             }
         })
         .catch(() => showToast("❌ Error sending reminders!"));

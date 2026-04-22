@@ -325,13 +325,19 @@
 
                 <div class="form-group">
                     <label class="form-label">Message</label>
-                    <textarea class="form-textarea" id="reminderMessage" placeholder="Type your reminder message here...">Hi {name} 👋,
+                    <textarea class="form-textarea" id="reminderMessage" placeholder="Type your reminder message here...">🔔 Reminder for *{chitName}*
+
+Hi {name} 👋,
 
 This is a friendly reminder to pay your chit amount of *₹{amount}* for this month.
 
 💳 Gpay/PhonePe to *{gpay}*
 
 Please make the payment at the earliest if not done.
+
+———————————
+
+🔔 *{chitName}* நினைவூட்டல்
 
 நட்பான நினைவூட்டல்: இந்த மாதத்திற்கான உங்கள் சிட் தொகை *₹{amount}* செலுத்தவும், இன்னும் செலுத்தவில்லை என்றால்.
 
@@ -388,23 +394,21 @@ Thank you! 🙏</textarea>
     let allMembers = [];
     let chitAmount = "0";
     let gpayNumber = "";
+    let chitName = "";
 
     function loadData() {
         setFieldsDisabled(false);
 
-        // Load members
         fetch(`/get-names?chitFile=${chitFile}`)
             .then(r => r.json())
-            .then(data => {
-                allMembers = data;
-            });
+            .then(data => { allMembers = data; });
 
-        // Load amount from chitNumberDetails
         fetch(`/get-chit-number?chitFile=${chitFile}`)
             .then(r => r.json())
             .then(data => {
                 chitAmount = data.amountPerPerson || "0";
                 gpayNumber = data.gpay || "";
+                chitName = data.chitName || chitFile.replace(".xlsx", "");
                 updatePreview();
             });
     }
@@ -417,6 +421,7 @@ Thank you! 🙏</textarea>
 
     function updatePreview() {
         const msg = document.getElementById("reminderMessage").value
+            .replace(/{chitName}/g, chitName)
             .replace(/{name}/g, "Member")
             .replace(/{amount}/g, chitAmount)
             .replace(/{gpay}/g, gpayNumber);
@@ -438,19 +443,10 @@ Thank you! 🙏</textarea>
         })
         .then(r => r.json())
         .then(data => {
-            if (data.results && data.results.length > 0) {
-                let i = 0;
-                function openNext() {
-                    if (i < data.results.length) {
-                        window.open(data.results[i].url, '_blank');
-                        i++;
-                        setTimeout(openNext, 1500);
-                    }
-                }
-                openNext();
-                showToast(`✅ Sending to ${data.results.length} members!`);
+            if (data.success) {
+                showToast("✅ Reminder sent successfully via WhatsApp!");
             } else {
-                showToast("⚠️ No members found!");
+                showToast("❌ Failed: " + (data.error || "Unknown error"));
             }
         })
         .catch(() => showToast("❌ Error sending reminders!"));

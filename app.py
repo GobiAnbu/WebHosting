@@ -79,9 +79,8 @@ def admin_required(f):
 
 def send_whatsapp_message(phone, message):
     """Send a WhatsApp message using the WhatsApp Business Cloud API."""
-    cfg = load_config()
-    token = cfg.get("whatsapp_api_token", "")
-    phone_id = cfg.get("whatsapp_phone_number_id", "")
+    token = os.environ.get("WHATSAPP_API_TOKEN", "")
+    phone_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
     if not token or not phone_id:
         return {"success": False, "error": "WhatsApp API not configured. Go to Settings to add your API token and Phone Number ID."}
     phone = str(phone).strip()
@@ -300,16 +299,15 @@ def send_campaign():
     )
     encoded = urllib.parse.quote(msg)
 
-    # Send only to the company contact number
+    # Send directly via WhatsApp API to company contact number
     chit_info_data = gs_get_chit_number(chit_file)
     contact_phone = str(chit_info_data.get("contactNumber", "")).strip()
 
-    results = []
     if contact_phone:
-        wa_url = f"https://wa.me/91{contact_phone}?text={encoded}"
-        results.append({"name": "Company", "phone": contact_phone, "url": wa_url})
-
-    return jsonify({"success": True, "results": results})
+        result = send_whatsapp_message(contact_phone, msg)
+        return jsonify(result)
+    else:
+        return jsonify({"success": False, "error": "No contact number found"})
 
 @app.route("/send-reminder", methods=["POST"])
 @login_required
@@ -319,22 +317,18 @@ def send_reminder():
     members = data.get("members", [])
     chit_file = data.get("chitFile", "")
 
-    reminder_data = get_reminder_data(chit_file)
-    amount_per_person = str(reminder_data.get("amountPerPerson", "0"))
-    gpay = reminder_data.get("gpay", "")
+    chit_info = gs_get_chit_number(chit_file)
+    amount_per_person = str(chit_info.get("amountPerPerson", "0"))
+    gpay = chit_info.get("gpay", "")
+    chit_name = chit_info.get("chitName", chit_file.replace(".xlsx", ""))
+    contact_phone = str(chit_info.get("contactNumber", "")).strip()
 
-    # Send only to the company contact number
-    contact_data = get_contact_number(chit_file)
-    contact_phone = str(contact_data.get("contactNumber", "")).strip()
-
-    results = []
     if contact_phone:
-        msg = message.replace("{name}", "").replace("{amount}", amount_per_person).replace("{gpay}", gpay)
-        encoded = urllib.parse.quote(msg)
-        wa_url = f"https://wa.me/91{contact_phone}?text={encoded}"
-        results.append({"name": "Company", "phone": contact_phone, "url": wa_url})
-
-    return jsonify({"success": True, "results": results})
+        msg = message.replace("{chitName}", chit_name).replace("{name}", "").replace("{amount}", amount_per_person).replace("{gpay}", gpay)
+        result = send_whatsapp_message(contact_phone, msg)
+        return jsonify(result)
+    else:
+        return jsonify({"success": False, "error": "No contact number found"})
 
 @app.route("/send-tomorrow-reminder", methods=["POST"])
 @login_required
@@ -345,29 +339,28 @@ def send_tomorrow_reminder():
     chit_number = data.get("chitNumber", "")
     chit_file = data.get("chitFile", "")
 
-    # Send only to the company contact number
-    contact_data = get_contact_number(chit_file)
-    contact_number = str(contact_data.get("contactNumber", "")).strip()
+    chit_info = gs_get_chit_number(chit_file)
+    contact_number = str(chit_info.get("contactNumber", "")).strip()
+    chit_name = chit_info.get("chitName", chit_file.replace(".xlsx", ""))
 
-    results = []
     if contact_number:
-        msg = message.replace("{name}", "").replace("{date}", chit_date).replace("{chitNumber}", chit_number).replace("{contactNumber}", contact_number)
-        encoded = urllib.parse.quote(msg)
-        wa_url = f"https://wa.me/91{contact_number}?text={encoded}"
-        results.append({"name": "Company", "phone": contact_number, "url": wa_url})
-
-    return jsonify({"success": True, "results": results})
+        msg = message.replace("{chitName}", chit_name).replace("{name}", "").replace("{date}", chit_date).replace("{chitNumber}", chit_number).replace("{contactNumber}", contact_number)
+        result = send_whatsapp_message(contact_number, msg)
+        return jsonify(result)
+    else:
+        return jsonify({"success": False, "error": "No contact number found"})
 
 # ==================== CONFIG ROUTES ====================
 
 @app.route("/get-config")
 @login_required
 def get_config():
-    cfg = load_config()
+    token = os.environ.get("WHATSAPP_API_TOKEN", "")
+    phone_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
     masked = {
-        "whatsapp_api_token": ("••••" + cfg.get("whatsapp_api_token", "")[-8:]) if len(cfg.get("whatsapp_api_token", "")) > 8 else cfg.get("whatsapp_api_token", ""),
-        "whatsapp_phone_number_id": cfg.get("whatsapp_phone_number_id", ""),
-        "configured": bool(cfg.get("whatsapp_api_token") and cfg.get("whatsapp_phone_number_id"))
+        "whatsapp_api_token": ("••••" + token[-8:]) if len(token) > 8 else token,
+        "whatsapp_phone_number_id": phone_id,
+        "configured": bool(token and phone_id)
     }
     return jsonify(masked)
 
@@ -375,14 +368,29 @@ def get_config():
 @login_required
 def save_config_route():
     data = request.get_json()
-    cfg = load_config()
     if data.get("whatsapp_api_token"):
-        cfg["whatsapp_api_token"] = data["whatsapp_api_token"]
+        os.environ["WHATSAPP_API_TOKEN"] = data["whatsapp_api_token"]
     if data.get("whatsapp_phone_number_id"):
-        cfg["whatsapp_phone_number_id"] = data["whatsapp_phone_number_id"]
-    if "sms_api_key" in data:
-        cfg["sms_api_key"] = data["sms_api_key"]
-    save_config(cfg)
+        os.environ["WHATSAPP_PHONE_NUMBER_ID"] = data["whatsapp_phone_number_id"]
+    # Persist to .env file so values survive restarts
+    try:
+        env_vars = {}
+        if os.path.exists(".env"):
+            with open(".env", "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if "=" in line and not line.startswith("#"):
+                        key, val = line.split("=", 1)
+                        env_vars[key.strip()] = val.strip()
+        if data.get("whatsapp_api_token"):
+            env_vars["WHATSAPP_API_TOKEN"] = data["whatsapp_api_token"]
+        if data.get("whatsapp_phone_number_id"):
+            env_vars["WHATSAPP_PHONE_NUMBER_ID"] = data["whatsapp_phone_number_id"]
+        with open(".env", "w") as f:
+            for key, val in env_vars.items():
+                f.write(f"{key}={val}\n")
+    except Exception:
+        pass
     return jsonify({"success": True})
 
 @app.route("/send-wa-direct", methods=["POST"])
