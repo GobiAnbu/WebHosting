@@ -174,6 +174,17 @@ def logout():
     session.clear()
     return redirect(url_for("login_page"))
 
+@app.route("/check-env")
+def check_env():
+    url = os.environ.get("APPS_SCRIPT_URL", "")
+    key = os.environ.get("APPS_SCRIPT_API_KEY", "")
+    secret = os.environ.get("SECRET_KEY", "")
+    return jsonify({
+        "APPS_SCRIPT_URL": ("✅ Set (" + url[:40] + "...)") if url else "❌ Missing",
+        "APPS_SCRIPT_API_KEY": "✅ Set" if key else "❌ Missing",
+        "SECRET_KEY": "✅ Set" if secret else "❌ Missing"
+    })
+
 # ==================== PAGE ROUTES ====================
 
 @app.route("/")
