@@ -125,6 +125,7 @@
             });
             const data = await resp.json();
             if (data.success) {
+                sessionStorage.setItem("loggedIn", "true");
                 window.location.href = '/';
             } else {
                 errorMsg.textContent = data.error || 'Invalid username or password';

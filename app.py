@@ -18,8 +18,15 @@ from google_sheets_api import (
 
 import threading
 
+from datetime import timedelta
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chit-fund-secret-key-2026")
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
+
+@app.before_request
+def make_session_permanent():
+    session.permanent = True
 
 # ==================== BACKGROUND DATA REFRESH ====================
 _bg_thread_started = False
@@ -196,7 +203,7 @@ def chit_tomorrow():
     return render_template("chit_tomorrow.html")
 
 @app.route("/settings")
-@login_required
+@admin_required
 def settings():
     return render_template("settings.html")
 
@@ -353,7 +360,7 @@ def send_tomorrow_reminder():
 # ==================== CONFIG ROUTES ====================
 
 @app.route("/get-config")
-@login_required
+@admin_required
 def get_config():
     token = os.environ.get("WHATSAPP_API_TOKEN", "")
     phone_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
@@ -365,7 +372,7 @@ def get_config():
     return jsonify(masked)
 
 @app.route("/save-config", methods=["POST"])
-@login_required
+@admin_required
 def save_config_route():
     data = request.get_json()
     if data.get("whatsapp_api_token"):
@@ -394,7 +401,7 @@ def save_config_route():
     return jsonify({"success": True})
 
 @app.route("/send-wa-direct", methods=["POST"])
-@login_required
+@admin_required
 def send_wa_direct():
     data = request.get_json()
     phone = data.get("phone", "")

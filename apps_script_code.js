@@ -268,6 +268,7 @@ function handleGetChitNumber(fileName) {
   var chitNumber = "";
   var noCount = 0;
   var amountPerPerson = 0;
+  var conductedStatus = "";
 
   for (var i = 1; i < data.length; i++) {
     var conducted = String(data[i][1]).trim().toLowerCase();
@@ -277,6 +278,7 @@ function handleGetChitNumber(fileName) {
       if (monthVal.getMonth() === now.getMonth() && monthVal.getFullYear() === now.getFullYear()) {
         chitNumber = data[i][0];
         amountPerPerson = data[i][6] || 0;
+        conductedStatus = conducted;
       }
     }
   }
@@ -307,7 +309,8 @@ function handleGetChitNumber(fileName) {
     totalAmount: totalAmount,
     chitName: chitName,
     gpay: gpay,
-    contactNumber: contactNumber
+    contactNumber: contactNumber,
+    conducted: conductedStatus
   };
 }
 
@@ -426,6 +429,7 @@ function handleGetAllChitData(fileName) {
   var chitNumber = "";
   var noCount = 0;
   var amountPerPerson = 0;
+  var conductedStatus = "";
   var numSheet = ss.getSheetByName("chitNumberDetails");
   if (numSheet) {
     var nData = numSheet.getDataRange().getValues();
@@ -436,6 +440,7 @@ function handleGetAllChitData(fileName) {
       if (monthVal instanceof Date && monthVal.getMonth() === now.getMonth() && monthVal.getFullYear() === now.getFullYear()) {
         chitNumber = nData[j][0];
         amountPerPerson = nData[j][6] || 0;
+        conductedStatus = conducted;
       }
     }
   }
@@ -465,7 +470,8 @@ function handleGetAllChitData(fileName) {
     totalAmount: totalAmount,
     chitName: chitName,
     gpay: gpay,
-    contactNumber: contactNumber
+    contactNumber: contactNumber,
+    conducted: conductedStatus
   };
 }
 

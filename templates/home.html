@@ -167,6 +167,7 @@
     </style>
 </head>
 <body>
+<script>if (!sessionStorage.getItem("loggedIn")) { window.location.href = "/logout"; }</script>
     <!-- Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="spinner"></div>
@@ -174,7 +175,7 @@
         <div class="loading-subtext" id="loadingStatus">Connecting to Google Sheets</div>
     </div>
 
-    <a href="/logout" class="logout-btn">🚪 Logout</a>
+    <a href="/logout" class="logout-btn" onclick="sessionStorage.clear()">🚪 Logout</a>
     <div class="container">
         <div class="title">📊 Chit Fund Manager</div>
         <div class="subtitle">Choose an option to get started</div>
@@ -195,7 +196,7 @@
                 <div class="card-title">Chit Tomorrow Reminder</div>
                 <div class="card-desc">Notify all members that chit will happen tomorrow</div>
             </a>
-            <a class="card card-settings" id="linkSettings" href="/settings">
+            <a class="card card-settings" id="linkSettings" href="/settings" style="display:none">
                 <div class="card-icon">⚙️</div>
                 <div class="card-title">Settings</div>
                 <div class="card-desc">Configure WhatsApp API for direct message sending</div>
@@ -210,7 +211,10 @@
     <script>
         // Check admin role
         fetch('/check-role').then(r=>r.json()).then(data=>{
-            if(data.role==='admin'){document.getElementById('linkAdmin').style.display='';}
+            if(data.role==='admin'){
+                document.getElementById('linkAdmin').style.display='';
+                document.getElementById('linkSettings').style.display='';
+            }
         });
 
         // Preload all data, then hide loading overlay

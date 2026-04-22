@@ -370,6 +370,7 @@
     </style>
 </head>
 <body>
+<script>if (!sessionStorage.getItem("loggedIn")) { window.location.href = "/logout"; }</script>
 
 <!-- HEADER -->
 <a class="home-btn" href="/">🏠 Home</a>
@@ -471,18 +472,26 @@
         </div>
 
         <!-- SEND -->
-        <button class="btn btn-send" onclick="sendMessages()">🚀 Send All Messages</button>
+        <button class="btn btn-send" onclick="sendMessages()">🚀 Update Details</button>
     </div>
 
 </div>
 
 <div class="toast" id="toast"></div>
 
+<div id="popupOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:2000; justify-content:center; align-items:center;">
+    <div style="background:#1a2a3a; border:1px solid rgba(255,255,255,0.15); border-radius:20px; padding:30px; max-width:400px; width:90%; text-align:center;">
+        <p id="popupMsg" style="color:#fff; font-size:1.1rem; margin-bottom:20px;"></p>
+        <button onclick="closePopup()" style="padding:10px 40px; background:linear-gradient(135deg,#25D366,#128C7E); color:#fff; border:none; border-radius:10px; font-size:1rem; font-weight:600; cursor:pointer;">OK</button>
+    </div>
+</div>
+
 <script>
     const urlParams = new URLSearchParams(window.location.search);
     let chitFile = urlParams.get("chitFile") || "";
     let chitName = "";
     let gpayNumber = "";
+    let isConducted = false;
 
     function setFieldsDisabled(disabled) {
         document.querySelectorAll('.right-panel .form-input, .right-panel .form-select, .right-panel .form-textarea, .btn-send').forEach(el => {
@@ -548,6 +557,12 @@
                 }
                 chitName = data.chitName || "";
                 gpayNumber = data.gpay || "";
+                isConducted = (data.conducted || "").toLowerCase() === "yes";
+                if (isConducted) {
+                    const btn = document.querySelector('.btn-send');
+                    btn.style.opacity = '0.5';
+                    btn.style.cursor = 'not-allowed';
+                }
                 updatePreview();
             });
     }
@@ -595,6 +610,10 @@
     }
 
     function sendMessages() {
+        if (isConducted) {
+            showToast("🚫 Chit already closed for this month!");
+            return;
+        }
         const data = {
             chitFile: chitFile,
             name: document.getElementById("name").value,
@@ -606,7 +625,7 @@
             chitRemaining: document.getElementById("chitRemaining").value
         };
         if (!data.name) { showToast("⚠️ Please select a name!"); return; }
-        showToast("📤 Sending messages...");
+        showToast("📤 Updating Details...");
         fetch("/send-campaign", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -615,12 +634,22 @@
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                showToast("✅ Message sent successfully via WhatsApp!");
+                showPopup("✅ Chit Details Updated & Message sent successfully via WhatsApp!");
             } else {
-                showToast("❌ Failed: " + (data.error || "Unknown error"));
+                showPopup("❌ Failed: " + (data.error || "Unknown error"));
             }
         })
-        .catch(() => showToast("❌ Error sending messages!"));
+        .catch(() => showPopup("❌ Error sending messages!"));
+    }
+
+    function showPopup(msg) {
+        document.getElementById("popupMsg").textContent = msg;
+        document.getElementById("popupOverlay").style.display = "flex";
+    }
+
+    function closePopup() {
+        document.getElementById("popupOverlay").style.display = "none";
+        window.location.href = "/chit-details";
     }
 
     function showToast(msg) {

@@ -127,7 +127,8 @@ def get_chit_number(spreadsheet_name):
         "totalAmount": data.get("totalAmount", 0),
         "chitName": data.get("chitName", ""),
         "gpay": data.get("gpay", ""),
-        "contactNumber": data.get("contactNumber", "")
+        "contactNumber": data.get("contactNumber", ""),
+        "conducted": data.get("conducted", "")
     }
 
 def get_reminder_data(spreadsheet_name):
