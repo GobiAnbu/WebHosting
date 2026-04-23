@@ -135,6 +135,12 @@ def preload_all_data():
     except Exception:
         pass
 
+# ==================== HEALTH CHECK ====================
+
+@app.route("/health")
+def health_check():
+    return jsonify({"status": "ok"}), 200
+
 # ==================== AUTH ROUTES ====================
 
 @app.route("/login-page")
