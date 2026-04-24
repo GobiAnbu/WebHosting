@@ -3,3 +3,7 @@ __pycache__/
 ~$*.xlsx
 .DS_Store
 .env
+template.xlsx
+template_demo.xlsx
+.env.example
+.gitignore

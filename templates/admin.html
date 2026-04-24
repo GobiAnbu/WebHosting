@@ -28,6 +28,23 @@
             transition: color 0.3s;
         }
         .back-btn:hover { color: #fff; }
+        .user-profile { position: fixed; top: 20px; right: 20px; z-index: 200; }
+        .user-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #00b4d8, #0077b6); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.3s; box-shadow: 0 2px 12px rgba(0,180,216,0.35); border: 2px solid rgba(255,255,255,0.15); }
+        .user-avatar:hover { transform: scale(1.1); box-shadow: 0 4px 20px rgba(0,180,216,0.5); }
+        .user-dropdown { position: absolute; top: 54px; right: 0; background: rgba(12,20,33,0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; min-width: 270px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); overflow: hidden; opacity: 0; transform: translateY(-8px); pointer-events: none; transition: all 0.2s ease; }
+        .user-dropdown.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+        .user-dropdown-header { display: flex; align-items: center; gap: 14px; padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .user-dropdown-avatar-wrap { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #00b4d8, #0077b6); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.2rem; font-weight: 700; flex-shrink: 0; }
+        .user-dropdown-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .user-dropdown-name { color: #fff; font-size: 1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-dropdown-role { display: inline-block; width: fit-content; padding: 2px 10px; border-radius: 999px; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .ud-role-admin { background: rgba(255,82,82,0.12); color: #ff6b6b; }
+        .ud-role-user { background: rgba(0,180,216,0.12); color: #00b4d8; }
+        .user-dropdown-menu { padding: 8px; }
+        .user-dropdown-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; background: none; border: none; border-radius: 10px; color: rgba(255,255,255,0.7); font-size: 0.85rem; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; text-decoration: none; transition: all 0.15s; }
+        .user-dropdown-link:hover { background: rgba(255,255,255,0.07); color: #fff; }
+        .user-dropdown-logout { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; background: none; border: none; border-radius: 10px; color: #ff6b6b; font-size: 0.85rem; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; text-decoration: none; transition: all 0.15s; }
+        .user-dropdown-logout:hover { background: rgba(255,82,82,0.1); }
         .home-btn {
             padding: 10px 20px;
             background: rgba(255,255,255,0.1);
@@ -206,6 +223,23 @@
 </head>
 <body>
 <script>if (!sessionStorage.getItem("loggedIn")) { window.location.href = "/logout"; }</script>
+    <div class="user-profile">
+        <div class="user-avatar" id="userAvatar" onclick="document.getElementById('userDropdown').classList.toggle('show')">?</div>
+        <div class="user-dropdown" id="userDropdown">
+            <div class="user-dropdown-header">
+                <div class="user-dropdown-avatar-wrap" id="userAvatarLarge">?</div>
+                <div class="user-dropdown-info">
+                    <div class="user-dropdown-name" id="userName">—</div>
+                    <span class="user-dropdown-role ud-role-user" id="userRole">user</span>
+                </div>
+            </div>
+            <div class="user-dropdown-menu">
+                <a href="/" class="user-dropdown-link">🏠 Home</a>
+                <a href="/logout" class="user-dropdown-logout" onclick="sessionStorage.clear()">🚪 Logout</a>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="header">
             <div class="header-left">
@@ -240,6 +274,12 @@
                         <option value="admin">Admin</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Assigned Chit Folder *</label>
+                    <select id="newChitFile">
+                        <option value="">-- Select Chit Folder --</option>
+                    </select>
+                </div>
                 <button class="btn-add" onclick="addUser()">Add User</button>
             </div>
         </div>
@@ -271,6 +311,12 @@
                     <option value="admin">Admin</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label>Assigned Chit Folder *</label>
+                <select id="editChitFile">
+                    <option value="">-- Select Chit Folder --</option>
+                </select>
+            </div>
             <div class="modal-actions">
                 <button class="btn-cancel" onclick="closeEditModal()">Cancel</button>
                 <button class="btn-save" onclick="saveEditUser()">Save</button>
@@ -281,12 +327,43 @@
     <div class="toast" id="toast"></div>
 
     <script>
+        let chitFiles = [];
+
         function showToast(msg, type) {
             const t = document.getElementById('toast');
             t.textContent = msg;
             t.className = 'toast toast-' + type;
             t.style.display = 'block';
             setTimeout(() => t.style.display = 'none', 3000);
+        }
+
+        async function loadChitFiles() {
+            try {
+                const resp = await fetch('/get-chit-folders');
+                const data = await resp.json();
+                if (Array.isArray(data)) {
+                    chitFiles = data;
+                } else {
+                    console.error('get-chit-folders error:', data);
+                    chitFiles = [];
+                }
+                populateChitDropdown('newChitFile', '');
+            } catch(e) {
+                console.error('loadChitFolders failed:', e);
+                showToast('Failed to load chit folders', 'error');
+            }
+        }
+
+        function populateChitDropdown(selectId, selectedValue) {
+            const sel = document.getElementById(selectId);
+            sel.innerHTML = '<option value="">-- Select Chit Folder --</option>';
+            chitFiles.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                if (f === selectedValue) opt.selected = true;
+                sel.appendChild(opt);
+            });
         }
 
         async function loadUsers() {
@@ -297,15 +374,17 @@
             users.forEach(u => {
                 const roleClass = u.role === 'admin' ? 'role-admin' : 'role-user';
                 const emailDisplay = u.email ? `<span class="user-email">📧 ${u.email}</span>` : '';
+                const chitDisplay = u.chitFile ? `<span class="user-email">📂 ${u.chitFile}</span>` : '';
                 list.innerHTML += `
                     <div class="user-card">
                         <div class="user-info">
                             <span class="user-name">${u.username}</span>
                             <span class="user-role ${roleClass}">${u.role}</span>
                             ${emailDisplay}
+                            ${chitDisplay}
                         </div>
                         <div class="user-actions">
-                            <button class="btn-edit" onclick="openEditModal('${u.username}','${u.role}','${u.email||''}')">✏️ Edit</button>
+                            <button class="btn-edit" onclick="openEditModal('${u.username}','${u.role}','${u.email||''}','${u.chitFile||''}')">✏️ Edit</button>
                             <button class="btn-delete" onclick="deleteUser('${u.username}')">🗑️ Delete</button>
                         </div>
                     </div>
@@ -318,11 +397,13 @@
             const password = document.getElementById('newPassword').value.trim();
             const email = document.getElementById('newEmail').value.trim();
             const role = document.getElementById('newRole').value;
+            const chitFile = document.getElementById('newChitFile').value;
             if (!username || !password) { showToast('Username and password required', 'error'); return; }
+            if (!chitFile) { showToast('Assigned Chit is required', 'error'); return; }
             const resp = await fetch('/add-user', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username, password, role, email})
+                body: JSON.stringify({username, password, role, email, chitFile})
             });
             const data = await resp.json();
             if (data.success) {
@@ -330,6 +411,7 @@
                 document.getElementById('newUsername').value = '';
                 document.getElementById('newPassword').value = '';
                 document.getElementById('newEmail').value = '';
+                document.getElementById('newChitFile').value = '';
                 loadUsers();
             } else {
                 showToast(data.error, 'error');
@@ -352,12 +434,13 @@
             }
         }
 
-        function openEditModal(username, role, email) {
+        function openEditModal(username, role, email, chitFile) {
             document.getElementById('editUsername').value = username;
             document.getElementById('editUsernameDisplay').value = username;
             document.getElementById('editPassword').value = '';
             document.getElementById('editEmail').value = email || '';
             document.getElementById('editRole').value = role;
+            populateChitDropdown('editChitFile', chitFile || '');
             document.getElementById('editModal').classList.add('active');
         }
 
@@ -370,10 +453,11 @@
             const password = document.getElementById('editPassword').value.trim();
             const email = document.getElementById('editEmail').value.trim();
             const role = document.getElementById('editRole').value;
+            const chitFile = document.getElementById('editChitFile').value;
             const resp = await fetch('/update-user', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username, password, role, email})
+                body: JSON.stringify({username, password, role, email, chitFile})
             });
             const data = await resp.json();
             if (data.success) {
@@ -385,7 +469,18 @@
             }
         }
 
+        loadChitFiles();
         loadUsers();
+
+        // User profile
+        document.addEventListener('click', function(e) { if (!e.target.closest('.user-profile')) document.getElementById('userDropdown').classList.remove('show'); });
+        fetch('/check-role').then(r=>r.json()).then(data=>{
+            const initial = (data.username||'?').charAt(0).toUpperCase();
+            document.getElementById('userAvatar').textContent = initial;
+            document.getElementById('userAvatarLarge').textContent = initial;
+            document.getElementById('userName').textContent = data.username||'—';
+            const r = document.getElementById('userRole'); r.textContent = data.role; r.className = 'user-dropdown-role ' + (data.role==='admin'?'ud-role-admin':'ud-role-user');
+        });
     </script>
 </body>
 </html>

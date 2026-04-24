@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Chit Data</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            min-height: 100vh;
+            padding: 30px 20px;
+            color: #fff;
+        }
+        .back-btn {
+            position: fixed; top: 20px; left: 20px; z-index: 200;
+            color: rgba(255,255,255,0.6); text-decoration: none; font-size: 1.5rem;
+            width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px; transition: all 0.3s;
+        }
+        .back-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+
+        /* User Profile Dropdown */
+        .user-profile { position: fixed; top: 20px; right: 20px; z-index: 200; }
+        .user-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #00b4d8, #0077b6); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.3s; box-shadow: 0 2px 12px rgba(0,180,216,0.35); border: 2px solid rgba(255,255,255,0.15); }
+        .user-avatar:hover { transform: scale(1.1); box-shadow: 0 4px 20px rgba(0,180,216,0.5); }
+        .user-dropdown { position: absolute; top: 54px; right: 0; background: rgba(12,20,33,0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; min-width: 270px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); overflow: hidden; opacity: 0; transform: translateY(-8px); pointer-events: none; transition: all 0.2s ease; }
+        .user-dropdown.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+        .user-dropdown-header { display: flex; align-items: center; gap: 14px; padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .user-dropdown-avatar-wrap { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #00b4d8, #0077b6); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.2rem; font-weight: 700; flex-shrink: 0; }
+        .user-dropdown-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .user-dropdown-name { color: #fff; font-size: 1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-dropdown-role { display: inline-block; width: fit-content; padding: 2px 10px; border-radius: 999px; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .ud-role-admin { background: rgba(255,82,82,0.12); color: #ff6b6b; }
+        .ud-role-user { background: rgba(0,180,216,0.12); color: #00b4d8; }
+        .user-dropdown-menu { padding: 8px; }
+        .user-dropdown-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; background: none; border: none; border-radius: 10px; color: rgba(255,255,255,0.7); font-size: 0.85rem; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; text-decoration: none; transition: all 0.15s; }
+        .user-dropdown-link:hover { background: rgba(255,255,255,0.07); color: #fff; }
+        .user-dropdown-logout { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; background: none; border: none; border-radius: 10px; color: #ff6b6b; font-size: 0.85rem; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; text-decoration: none; transition: all 0.15s; }
+        .user-dropdown-logout:hover { background: rgba(255,82,82,0.1); }
+
+        /* Page Layout */
+        .page-container { max-width: 1100px; margin: 0 auto; padding-top: 20px; }
+        .page-title { text-align: center; font-size: 1.6rem; font-weight: 700; margin-bottom: 8px; }
+        .page-subtitle { text-align: center; color: rgba(255,255,255,0.5); font-size: 0.9rem; margin-bottom: 28px; }
+
+        /* File Selector */
+        .file-selector { text-align: center; margin-bottom: 28px; }
+        .file-selector select {
+            padding: 10px 18px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 12px; color: #fff; font-size: 0.95rem; font-family: 'Inter', sans-serif;
+            outline: none; min-width: 260px; cursor: pointer;
+        }
+        .file-selector select:focus { border-color: #00b4d8; }
+        .file-selector select option { background: #1a2a3a; color: #fff; }
+
+        /* Toggle Tabs */
+        .tab-bar {
+            display: flex; justify-content: center; gap: 4px; margin-bottom: 28px;
+            background: rgba(255,255,255,0.06); border-radius: 14px; padding: 4px;
+            max-width: 480px; margin-left: auto; margin-right: auto;
+        }
+        .tab-btn {
+            flex: 1; padding: 11px 20px; border: none; border-radius: 11px;
+            background: none; color: rgba(255,255,255,0.5); font-size: 0.88rem;
+            font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer;
+            transition: all 0.25s;
+        }
+        .tab-btn.active {
+            background: linear-gradient(135deg, #00b4d8, #0077b6);
+            color: #fff; box-shadow: 0 4px 16px rgba(0,180,216,0.3);
+        }
+        .tab-btn:not(.active):hover { color: rgba(255,255,255,0.8); }
+
+        /* Tab Content */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Cards */
+        .info-card {
+            background: rgba(255,255,255,0.06); backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;
+            padding: 24px; margin-bottom: 24px;
+        }
+        .info-card-title {
+            font-size: 1.1rem; font-weight: 700; margin-bottom: 16px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .info-card-title .icon { font-size: 1.3rem; }
+
+        /* Key-Value Grid for chitDetails */
+        .kv-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 12px;
+        }
+        .kv-item {
+            background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px; padding: 14px;
+        }
+        .kv-label { font-size: 0.72rem; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; font-weight: 600; }
+        .kv-value { font-size: 1rem; font-weight: 600; color: #fff; word-break: break-word; }
+
+        /* Table */
+        .table-wrap { overflow-x: auto; border-radius: 12px; }
+        table {
+            width: 100%; border-collapse: collapse; font-size: 0.85rem;
+        }
+        thead th {
+            background: rgba(0,180,216,0.15); color: #00b4d8; padding: 12px 14px;
+            text-align: left; font-weight: 600; font-size: 0.75rem;
+            text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
+            position: sticky; top: 0;
+        }
+        tbody td {
+            padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.85); white-space: nowrap;
+        }
+        tbody tr:hover { background: rgba(255,255,255,0.04); }
+        tbody tr:last-child td { border-bottom: none; }
+
+        /* Status badges */
+        .badge-yes { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; background: rgba(76,175,80,0.15); color: #66bb6a; }
+        .badge-no { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; background: rgba(255,152,0,0.15); color: #ffa726; }
+
+        /* Loading */
+        .loading-msg { text-align: center; padding: 60px 20px; color: rgba(255,255,255,0.4); font-size: 0.95rem; }
+        .loading-msg .spinner { display: inline-block; width: 28px; height: 28px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #00b4d8; border-radius: 50%; animation: spin 0.7s linear infinite; margin-bottom: 12px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Empty state */
+        .empty-state { text-align: center; padding: 40px; color: rgba(255,255,255,0.3); }
+
+        /* Search */
+        .search-bar {
+            margin-bottom: 16px;
+        }
+        .search-bar input {
+            width: 100%; padding: 10px 16px; background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
+            color: #fff; font-size: 0.9rem; font-family: 'Inter', sans-serif; outline: none;
+        }
+        .search-bar input::placeholder { color: rgba(255,255,255,0.3); }
+        .search-bar input:focus { border-color: #00b4d8; }
+
+        .payment-badge { cursor: pointer; user-select: none; transition: opacity 0.2s; }
+        .payment-badge:hover { opacity: 0.7; }
+
+        @media (max-width: 600px) {
+            .kv-grid { grid-template-columns: 1fr; }
+            .page-title { font-size: 1.3rem; }
+            .tab-btn { font-size: 0.8rem; padding: 10px 12px; }
+            body { padding: 20px 12px; }
+        }
+    </style>
+</head>
+<body>
+<script>if (!sessionStorage.getItem("loggedIn")) { window.location.href = "/logout"; }</script>
+
+    <a href="/" class="back-btn">←</a>
+
+    <div class="user-profile">
+        <div class="user-avatar" id="userAvatar" onclick="document.getElementById('userDropdown').classList.toggle('show')">?</div>
+        <div class="user-dropdown" id="userDropdown">
+            <div class="user-dropdown-header">
+                <div class="user-dropdown-avatar-wrap" id="userAvatarLarge">?</div>
+                <div class="user-dropdown-info">
+                    <div class="user-dropdown-name" id="userName">—</div>
+                    <span class="user-dropdown-role ud-role-user" id="userRole">user</span>
+                </div>
+            </div>
+            <div class="user-dropdown-menu">
+                <a href="/" class="user-dropdown-link">🏠 Home</a>
+                <a href="/logout" class="user-dropdown-logout" onclick="sessionStorage.clear()">🚪 Logout</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="page-container">
+        <div class="page-title">📋 View Chit Data</div>
+        <div class="page-subtitle">Select a chit file to view its details</div>
+
+        <div class="file-selector">
+            <select id="chitFileSelect" onchange="loadViewData()">
+                <option value="">-- Select Chit File --</option>
+            </select>
+        </div>
+
+        <div class="tab-bar" id="tabBar" style="display:none;">
+            <button class="tab-btn active" onclick="switchTab('details', this)">📊 Chit Details</button>
+            <button class="tab-btn" onclick="switchTab('members', this)">👥 Members</button>
+        </div>
+
+        <!-- Tab 1: Chit Details + ChitNumberDetails -->
+        <div class="tab-content active" id="tab-details">
+            <div id="detailsContent">
+                <div class="empty-state">Select a chit file above to view data</div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Chit Members -->
+        <div class="tab-content" id="tab-members">
+            <div id="membersContent">
+                <div class="empty-state">Select a chit file above to view members</div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // ===== User Profile =====
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.user-profile')) document.getElementById('userDropdown').classList.remove('show');
+    });
+    fetch('/check-role').then(r=>r.json()).then(data=>{
+        const initial = (data.username||'?').charAt(0).toUpperCase();
+        document.getElementById('userAvatar').textContent = initial;
+        document.getElementById('userAvatarLarge').textContent = initial;
+        document.getElementById('userName').textContent = data.username||'—';
+        const r = document.getElementById('userRole'); r.textContent = data.role; r.className = 'user-dropdown-role ' + (data.role==='admin'?'ud-role-admin':'ud-role-user');
+    });
+
+    // ===== Load Chit Files =====
+    fetch('/get-chit-files').then(r=>r.json()).then(files=>{
+        const sel = document.getElementById('chitFileSelect');
+        files.forEach(f => { const o = document.createElement('option'); o.value = f; o.textContent = f; sel.appendChild(o); });
+    });
+
+    // ===== Tab Switching =====
+    function switchTab(tab, btn) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-' + tab).classList.add('active');
+        btn.classList.add('active');
+    }
+
+    // ===== Load View Data =====
+    function loadViewData() {
+        const file = document.getElementById('chitFileSelect').value;
+        if (!file) {
+            document.getElementById('tabBar').style.display = 'none';
+            document.getElementById('detailsContent').innerHTML = '<div class="empty-state">Select a chit file above to view data</div>';
+            document.getElementById('membersContent').innerHTML = '<div class="empty-state">Select a chit file above to view members</div>';
+            return;
+        }
+
+        document.getElementById('tabBar').style.display = 'flex';
+        document.getElementById('detailsContent').innerHTML = '<div class="loading-msg"><div class="spinner"></div><br>Loading chit data...</div>';
+        document.getElementById('membersContent').innerHTML = '<div class="loading-msg"><div class="spinner"></div><br>Loading members...</div>';
+
+        fetch('/get-chit-view-data?chitFile=' + encodeURIComponent(file))
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('detailsContent').innerHTML = '<div class="empty-state">⚠️ ' + data.error + '</div>';
+                    document.getElementById('membersContent').innerHTML = '<div class="empty-state">⚠️ ' + data.error + '</div>';
+                    return;
+                }
+                renderDetails(data.chitDetails, data.chitNumberRows, data.chitNumberHeaders);
+                renderMembers(data.chitMembers, data.chitMemberHeaders);
+            })
+            .catch(err => {
+                document.getElementById('detailsContent').innerHTML = '<div class="empty-state">⚠️ Failed to load data</div>';
+                document.getElementById('membersContent').innerHTML = '<div class="empty-state">⚠️ Failed to load data</div>';
+            });
+    }
+
+    // ===== Render Chit Details + Number Details =====
+    function renderDetails(chitDetails, chitNumberRows, chitNumberHeaders) {
+        let html = '';
+
+        // Chit Details Card
+        if (chitDetails && Object.keys(chitDetails).length > 0) {
+            html += '<div class="info-card">';
+            html += '<div class="info-card-title"><span class="icon">📄</span> Chit Details</div>';
+            html += '<div class="kv-grid">';
+            for (const [key, val] of Object.entries(chitDetails)) {
+                const lk = key.toLowerCase();
+                const displayVal = (lk.includes('month') || lk.includes('date')) ? formatIfDate(val) : String(val || '—');
+                html += '<div class="kv-item">';
+                html += '<div class="kv-label">' + escHtml(key) + '</div>';
+                html += '<div class="kv-value">' + escHtml(displayVal) + '</div>';
+                html += '</div>';
+            }
+            html += '</div></div>';
+        }
+
+        // Chit Number Details Table
+        if (chitNumberRows && chitNumberRows.length > 0) {
+            const headers = chitNumberHeaders && chitNumberHeaders.length > 0 ? chitNumberHeaders : Object.keys(chitNumberRows[0]);
+            html += '<div class="info-card">';
+            html += '<div class="info-card-title"><span class="icon">📊</span> Chit Number Details</div>';
+            html += '<div class="table-wrap"><table><thead><tr>';
+            headers.forEach(h => { html += '<th>' + escHtml(h) + '</th>'; });
+            html += '</tr></thead><tbody>';
+            chitNumberRows.forEach(row => {
+                html += '<tr>';
+                headers.forEach(h => {
+                    let val = row[h];
+                    const lh = h.toLowerCase();
+                    if (lh === 'conducted' || lh === 'withdraw') {
+                        const isYes = String(val).trim().toLowerCase() === 'yes';
+                        val = '<span class="' + (isYes ? 'badge-yes' : 'badge-no') + '">' + (isYes ? 'Yes' : 'No') + '</span>';
+                        html += '<td>' + val + '</td>';
+                    } else if (lh === 'month' || lh.includes('date')) {
+                        html += '<td>' + escHtml(formatIfDate(val)) + '</td>';
+                    } else {
+                        html += '<td>' + escHtml(String(val !== null && val !== undefined ? val : '')) + '</td>';
+                    }
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table></div></div>';
+        }
+
+        if (!html) html = '<div class="empty-state">No details found</div>';
+        document.getElementById('detailsContent').innerHTML = html;
+    }
+
+    // ===== Render Members =====
+    function renderMembers(chitMembers, chitMemberHeaders) {
+        if (!chitMembers || chitMembers.length === 0) {
+            document.getElementById('membersContent').innerHTML = '<div class="empty-state">No members found</div>';
+            return;
+        }
+
+        const headers = chitMemberHeaders && chitMemberHeaders.length > 0 ? chitMemberHeaders : Object.keys(chitMembers[0]);
+
+        // Find index after MobileNumber to apply date formatting
+        const mobileIdx = headers.findIndex(h => h.toLowerCase() === 'mobilenumber');
+        const dateStartIdx = mobileIdx >= 0 ? mobileIdx + 1 : headers.length;
+
+        // Filter out future month columns — only show up to current month
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth(); // 0-based
+
+        const filteredIndices = [];
+        headers.forEach((h, i) => {
+            if (i < dateStartIdx) {
+                filteredIndices.push(i);
+            } else {
+                // Parse the header as a date and check if it's <= current month
+                const parsed = parseDateHeader(h);
+                if (parsed && (parsed.year < currentYear || (parsed.year === currentYear && parsed.month <= currentMonth))) {
+                    filteredIndices.push(i);
+                }
+            }
+        });
+
+        // Format headers after MobileNumber as MMM-YYYY
+        const displayHeaders = filteredIndices.map(i => {
+            if (i >= dateStartIdx) {
+                const fmt = toMMMyyyy(headers[i]);
+                return fmt !== null ? fmt : headers[i];
+            }
+            return headers[i];
+        });
+
+        let html = '';
+
+        // Search bar
+        html += '<div class="search-bar"><input type="text" id="memberSearch" placeholder="🔍 Search members..." oninput="filterMembers()"></div>';
+
+        html += '<div class="info-card">';
+        html += '<div class="info-card-title"><span class="icon">👥</span> Chit Members <span style="font-size:0.8rem;font-weight:500;color:rgba(255,255,255,0.4);margin-left:8px;">(' + chitMembers.length + ' members)</span></div>';
+        html += '<div class="table-wrap"><table><thead><tr>';
+        html += '<th>#</th>';
+        displayHeaders.forEach(h => { html += '<th>' + escHtml(h) + '</th>'; });
+        html += '</tr></thead><tbody id="membersTableBody">';
+        chitMembers.forEach((row, idx) => {
+            const memberName = row['Name'] || row['name'] || '';
+            html += '<tr>';
+            html += '<td>' + (idx + 1) + '</td>';
+            filteredIndices.forEach(i => {
+                const h = headers[i];
+                let val = row[h];
+                const lh = h.toLowerCase();
+                if (lh === 'withdraw') {
+                    const isYes = String(val).trim().toLowerCase() === 'yes';
+                    val = '<span class="' + (isYes ? 'badge-yes' : 'badge-no') + '">' + (isYes ? 'Yes' : 'No') + '</span>';
+                    html += '<td>' + val + '</td>';
+                } else if (i >= dateStartIdx) {
+                    const isPaid = String(val).trim().toLowerCase() === 'paid';
+                    const displayMonth = displayHeaders[filteredIndices.indexOf(i)];
+                    const cls = isPaid ? 'badge-yes' : 'badge-no';
+                    const label = isPaid ? 'Paid' : 'Not Paid';
+                    html += '<td><span class="' + cls + ' payment-badge" style="cursor:pointer;" onclick="togglePayment(this, \'' + escAttr(memberName) + '\', \'' + escAttr(displayMonth) + '\')">' + label + '</span></td>';
+                } else {
+                    html += '<td>' + escHtml(String(val !== null && val !== undefined ? val : '')) + '</td>';
+                }
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table></div></div>';
+
+        document.getElementById('membersContent').innerHTML = html;
+    }
+
+    // ===== Filter Members =====
+    function filterMembers() {
+        const q = document.getElementById('memberSearch').value.toLowerCase();
+        const rows = document.querySelectorAll('#membersTableBody tr');
+        rows.forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+    }
+
+    // ===== Escape HTML =====
+    function escHtml(str) {
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    function escAttr(str) {
+        return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // ===== Toggle Payment =====
+    function togglePayment(badge, memberName, month) {
+        const file = document.getElementById('chitFileSelect').value;
+        if (!file) return;
+        const isPaid = badge.textContent.trim() === 'Paid';
+        const newStatus = isPaid ? 'Not Paid' : 'Paid';
+        badge.style.opacity = '0.4';
+        badge.style.pointerEvents = 'none';
+
+        fetch('/update-member-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chitFile: file, memberName: memberName, month: month, status: newStatus })
+        })
+        .then(r => r.json())
+        .then(data => {
+            badge.style.opacity = '1';
+            badge.style.pointerEvents = 'auto';
+            if (data.success) {
+                badge.textContent = newStatus;
+                badge.className = (newStatus === 'Paid' ? 'badge-yes' : 'badge-no') + ' payment-badge';
+            } else {
+                alert('Failed to update: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(err => {
+            badge.style.opacity = '1';
+            badge.style.pointerEvents = 'auto';
+            alert('Failed to update payment status');
+        });
+    }
+
+    // ===== Format date to MMM-YYYY =====
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function toMMMyyyy(val) {
+        if (!val) return val;
+        const s = String(val).trim();
+        // Try dd-MM-yyyy pattern FIRST (Apps Script sends dates in this format)
+        const m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+        if (m) {
+            const mon = parseInt(m[2], 10) - 1;
+            if (mon >= 0 && mon < 12) return monthNames[mon] + '-' + m[3];
+        }
+        // Try yyyy-MM-dd (ISO format)
+        const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (iso) {
+            const mon = parseInt(iso[2], 10) - 1;
+            if (mon >= 0 && mon < 12) return monthNames[mon] + '-' + iso[1];
+        }
+        // Try parsing as Date (for raw date strings like "Sat May 01 2026...")
+        const d = new Date(s);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1970) {
+            return monthNames[d.getMonth()] + '-' + d.getFullYear();
+        }
+        return null; // not a date
+    }
+
+    function formatIfDate(val) {
+        const r = toMMMyyyy(val);
+        return r !== null ? r : String(val !== null && val !== undefined ? val : '');
+    }
+
+    // ===== Parse date header to {year, month} (month is 0-based) =====
+    function parseDateHeader(val) {
+        if (!val) return null;
+        const s = String(val).trim();
+        // dd-MM-yyyy
+        const m1 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+        if (m1) return { year: parseInt(m1[3], 10), month: parseInt(m1[2], 10) - 1 };
+        // yyyy-MM-dd
+        const m2 = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (m2) return { year: parseInt(m2[1], 10), month: parseInt(m2[2], 10) - 1 };
+        // MMM-yyyy
+        const m3 = s.match(/^([A-Za-z]{3})-(\d{4})$/);
+        if (m3) {
+            const mi = monthNames.findIndex(mn => mn.toLowerCase() === m3[1].toLowerCase());
+            if (mi >= 0) return { year: parseInt(m3[2], 10), month: mi };
+        }
+        // Try native Date parse
+        const d = new Date(s);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return { year: d.getFullYear(), month: d.getMonth() };
+        return null;
+    }
+</script>
+</body>
+</html>

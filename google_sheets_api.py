@@ -63,12 +63,12 @@ def find_user(username):
             return u
     return None
 
-def add_user(username, password, role, email=""):
+def add_user(username, password, role, email="", chit_file=""):
     if find_user(username):
         return False, "User already exists"
     clear_cache("users")
     resp = requests.post(_get_url(), params=_params("addUser"),
-                         json={"username": username, "password": password, "role": role, "email": email}, timeout=30)
+                         json={"username": username, "password": password, "role": role, "email": email, "chitFile": chit_file}, timeout=30)
     return True, "User added"
 
 def delete_user(username):
@@ -77,22 +77,36 @@ def delete_user(username):
                          json={"username": username}, timeout=30)
     return True, "Deleted"
 
-def update_user(username, password=None, role=None, email=None):
+def update_user(username, password=None, role=None, email=None, chit_file=None):
     clear_cache("users")
     resp = requests.post(_get_url(), params=_params("updateUser"),
-                         json={"username": username, "password": password or "", "role": role or "", "email": email if email is not None else ""}, timeout=30)
+                         json={"username": username, "password": password or "", "role": role or "", "email": email if email is not None else "", "chitFile": chit_file if chit_file is not None else ""}, timeout=30)
     return True, "Updated"
 
 # ==================== CHIT FILE OPERATIONS ====================
 
-def get_chit_files():
-    """Get list of spreadsheet names from the chitData folder."""
-    cached = _get_cached("chit_files")
+def get_chit_folders():
+    """Get list of subfolder names from the chitData folder."""
+    cached = _get_cached("chit_folders")
     if cached is not None:
         return cached
-    resp = requests.get(_get_url(), params=_params("getChitFiles"), timeout=30)
+    resp = requests.get(_get_url(), params=_params("getChitFolders"), timeout=30)
     data = resp.json()
-    _set_cache("chit_files", data)
+    _set_cache("chit_folders", data)
+    return data
+
+def get_chit_files(folder_name=None):
+    """Get list of spreadsheet names from a folder inside chitData."""
+    cache_key = f"chit_files_{folder_name}" if folder_name else "chit_files"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
+    params = _params("getChitFiles")
+    if folder_name:
+        params["folder"] = folder_name
+    resp = requests.get(_get_url(), params=params, timeout=30)
+    data = resp.json()
+    _set_cache(cache_key, data)
     return data
 
 def get_all_chit_data(spreadsheet_name, force_refresh=False):
@@ -128,7 +142,8 @@ def get_chit_number(spreadsheet_name):
         "chitName": data.get("chitName", ""),
         "gpay": data.get("gpay", ""),
         "contactNumber": data.get("contactNumber", ""),
-        "conducted": data.get("conducted", "")
+        "conducted": data.get("conducted", ""),
+        "balanceChit": data.get("balanceChit", "")
     }
 
 def get_reminder_data(spreadsheet_name):
@@ -156,3 +171,13 @@ def update_campaign(spreadsheet_name, name, chit_amount, discount_amount, amount
                          }, timeout=30)
     return resp.json()
 
+def get_chit_view_data(spreadsheet_name):
+    """Get full view data: chitDetails sheet, all chitNumberDetails rows, and all members."""
+    cache_key = f"viewdata_{spreadsheet_name}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
+    resp = requests.get(_get_url(), params=_params("getChitViewData", file=spreadsheet_name), timeout=30)
+    data = resp.json()
+    _set_cache(cache_key, data)
+    return data

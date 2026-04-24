@@ -11,9 +11,11 @@ import time
 from google_sheets_api import (
     get_all_users, find_user, add_user as gs_add_user,
     delete_user as gs_delete_user, update_user as gs_update_user,
-    get_chit_files as gs_get_chit_files, get_members, get_all_members,
+    get_chit_files as gs_get_chit_files, get_chit_folders as gs_get_chit_folders,
+    get_members, get_all_members,
     get_chit_number as gs_get_chit_number, update_campaign,
-    get_reminder_data, get_contact_number, get_all_chit_data
+    get_reminder_data, get_contact_number, get_all_chit_data,
+    get_chit_view_data as gs_get_chit_view_data
 )
 
 import threading
@@ -35,12 +37,14 @@ def background_refresh():
     """Continuously refresh cache every 10 seconds in background."""
     while True:
         try:
-            files = gs_get_chit_files()
-            for f in files:
-                try:
-                    get_all_chit_data(f, force_refresh=True)
-                except Exception:
-                    pass
+            folders = gs_get_chit_folders()
+            for folder in folders:
+                files = gs_get_chit_files(folder)
+                for f in files:
+                    try:
+                        get_all_chit_data(f, force_refresh=True)
+                    except Exception:
+                        pass
         except Exception:
             pass
         time.sleep(10)
@@ -78,6 +82,8 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get("logged_in"):
+            if request.is_json or request.path.startswith("/get-") or request.path.startswith("/save-") or request.path.startswith("/send-") or request.path.startswith("/add-") or request.path.startswith("/delete-") or request.path.startswith("/update-"):
+                return jsonify({"error": "Unauthorized"}), 401
             return redirect(url_for("login_page"))
         if session.get("role") != "admin":
             return jsonify({"error": "Admin access required"}), 403
@@ -126,12 +132,14 @@ def get_chit_file():
 def preload_all_data():
     """Preload all chit files data into cache in background."""
     try:
-        files = gs_get_chit_files()
-        for f in files:
-            try:
-                get_all_chit_data(f)
-            except Exception:
-                pass
+        folders = gs_get_chit_folders()
+        for folder in folders:
+            files = gs_get_chit_files(folder)
+            for f in files:
+                try:
+                    get_all_chit_data(f)
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -166,6 +174,7 @@ def login():
         session["logged_in"] = True
         session["username"] = username
         session["role"] = user.get("role", "user")
+        session["chitFile"] = user.get("chitFile", "")
         start_background_refresh()
         return jsonify({"success": True})
 
@@ -213,15 +222,60 @@ def chit_tomorrow():
 def settings():
     return render_template("settings.html")
 
+@app.route("/chit-view")
+@login_required
+def chit_view():
+    return render_template("chit_view.html")
+
 # ==================== CHIT DATA API ROUTES ====================
 
 @app.route("/get-chit-files")
 @login_required
 def get_chit_files():
     try:
-        files = gs_get_chit_files()
-        return jsonify(files)
+        if session.get("role") == "admin":
+            # Admin sees all folders' files
+            folders = gs_get_chit_folders()
+            all_files = []
+            for folder in folders:
+                files = gs_get_chit_files(folder)
+                all_files.extend(files)
+            return jsonify(all_files)
+        else:
+            # User sees only files from their assigned folder
+            user_folder = session.get("chitFile", "")
+            if user_folder:
+                files = gs_get_chit_files(user_folder)
+                return jsonify(files)
+            else:
+                return jsonify([])
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/get-chit-folders")
+@admin_required
+def get_chit_folders():
+    """Return all subfolder names inside chitData - for admin dropdown."""
+    try:
+        folders = gs_get_chit_folders()
+        return jsonify(folders)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/get-all-chit-files")
+@admin_required
+def get_all_chit_files():
+    """Return all chit files from all folders - for admin."""
+    try:
+        folders = gs_get_chit_folders()
+        all_files = []
+        for folder in folders:
+            files = gs_get_chit_files(folder)
+            all_files.extend(files)
+        print(f"[Admin] All chit files: {all_files}")
+        return jsonify(all_files)
+    except Exception as e:
+        print(f"[Admin] Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/preload-data")
@@ -229,13 +283,17 @@ def get_chit_files():
 def preload_data():
     """Preload all chit data and return when done."""
     try:
-        files = gs_get_chit_files()
-        for f in files:
-            try:
-                get_all_chit_data(f)
-            except Exception:
-                pass
-        return jsonify({"success": True, "files": len(files)})
+        folders = gs_get_chit_folders()
+        count = 0
+        for folder in folders:
+            files = gs_get_chit_files(folder)
+            for f in files:
+                try:
+                    get_all_chit_data(f)
+                    count += 1
+                except Exception:
+                    pass
+        return jsonify({"success": True, "files": count})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
@@ -256,6 +314,39 @@ def get_chit_number():
     try:
         data = gs_get_chit_number(chit_file)
         return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/get-chit-view-data")
+@login_required
+def get_chit_view_data():
+    chit_file = get_chit_file()
+    try:
+        data = gs_get_chit_view_data(chit_file)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/update-member-payment", methods=["POST"])
+@login_required
+def update_member_payment():
+    data = request.get_json()
+    chit_file = data.get("chitFile", "")
+    member_name = data.get("memberName", "")
+    month = data.get("month", "")
+    status = data.get("status", "")
+    if not chit_file or not member_name or not month:
+        return jsonify({"error": "Missing parameters"}), 400
+    try:
+        from google_sheets_api import clear_cache
+        result = requests.post(
+            os.environ.get("APPS_SCRIPT_URL", ""),
+            params={"action": "updateMemberPayment", "key": os.environ.get("APPS_SCRIPT_API_KEY", ""), "file": chit_file},
+            json={"memberName": member_name, "month": month, "status": status},
+            timeout=30
+        )
+        clear_cache(chit_file)
+        return jsonify(result.json())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -420,7 +511,7 @@ def send_wa_direct():
 @app.route("/check-role")
 @login_required
 def check_role():
-    return jsonify({"role": session.get("role", "user"), "username": session.get("username", "")})
+    return jsonify({"role": session.get("role", "user"), "username": session.get("username", ""), "chitFile": session.get("chitFile", "")})
 
 @app.route("/admin")
 @admin_required
@@ -431,7 +522,7 @@ def admin_page():
 @admin_required
 def get_users_route():
     users = get_all_users()
-    return jsonify([{"username": u["username"], "role": u.get("role", "user"), "email": u.get("email", "")} for u in users])
+    return jsonify([{"username": u["username"], "role": u.get("role", "user"), "email": u.get("email", ""), "chitFile": u.get("chitFile", "")} for u in users])
 
 @app.route("/add-user", methods=["POST"])
 @admin_required
@@ -441,9 +532,12 @@ def add_user():
     password = data.get("password", "").strip()
     role = data.get("role", "user")
     email = data.get("email", "").strip()
+    chit_file = data.get("chitFile", "").strip()
     if not username or not password:
         return jsonify({"success": False, "error": "Username and password are required"})
-    success, msg = gs_add_user(username, password, role, email)
+    if not chit_file:
+        return jsonify({"success": False, "error": "Assigned Chit is required"})
+    success, msg = gs_add_user(username, password, role, email, chit_file)
     return jsonify({"success": success, "error": msg if not success else None})
 
 @app.route("/delete-user", methods=["POST"])
@@ -464,7 +558,8 @@ def update_user():
     password = data.get("password", "").strip()
     role = data.get("role", "")
     email = data.get("email", "").strip()
-    success, msg = gs_update_user(username, password or None, role, email)
+    chit_file = data.get("chitFile", "").strip()
+    success, msg = gs_update_user(username, password or None, role, email, chit_file)
     return jsonify({"success": success, "error": msg if not success else None})
 
 if __name__ == "__main__":
