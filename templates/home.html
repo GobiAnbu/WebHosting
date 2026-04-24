@@ -181,6 +181,54 @@
             color: rgba(255,255,255,0.4);
             font-size: 0.85rem;
         }
+        /* Password Modal */
+        .pwd-modal-overlay {
+            display: none; position: fixed; inset: 0; z-index: 10000;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
+            align-items: center; justify-content: center;
+        }
+        .pwd-modal {
+            background: rgba(12,20,33,0.97); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px; padding: 36px 32px 28px; width: 100%; max-width: 380px;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+        }
+        .pwd-modal h3 {
+            color: #fff; font-size: 1.15rem; font-weight: 700; margin-bottom: 6px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .pwd-modal p { color: rgba(255,255,255,0.4); font-size: 0.82rem; margin-bottom: 24px; }
+        .pwd-field { margin-bottom: 16px; }
+        .pwd-field label {
+            display: block; color: rgba(255,255,255,0.5); font-size: 0.75rem;
+            font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+        }
+        .pwd-field input {
+            width: 100%; padding: 12px 16px; background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12); border-radius: 12px;
+            color: #fff; font-size: 0.92rem; font-family: 'Inter', sans-serif; outline: none;
+            transition: border-color 0.2s;
+        }
+        .pwd-field input:focus { border-color: #00b4d8; }
+        .pwd-btns { display: flex; gap: 10px; margin-top: 24px; }
+        .pwd-btn {
+            flex: 1; padding: 12px; border: none; border-radius: 12px;
+            font-size: 0.88rem; font-weight: 600; font-family: 'Inter', sans-serif;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .pwd-btn-cancel {
+            background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .pwd-btn-cancel:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        .pwd-btn-save { background: linear-gradient(135deg, #00b4d8, #0077b6); color: #fff; }
+        .pwd-btn-save:hover { box-shadow: 0 4px 16px rgba(0,180,216,0.4); }
+        .pwd-btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pwd-msg {
+            margin-top: 14px; padding: 10px 14px; border-radius: 10px;
+            font-size: 0.82rem; font-weight: 500; display: none;
+        }
+        .pwd-msg.success { display: block; background: rgba(76,175,80,0.12); color: #66bb6a; }
+        .pwd-msg.error { display: block; background: rgba(255,82,82,0.12); color: #ff6b6b; }
     </style>
 </head>
 <body>
@@ -203,6 +251,7 @@
                 </div>
             </div>
             <div class="user-dropdown-menu">
+                <button class="user-dropdown-logout" style="color: rgba(255,255,255,0.7);" onclick="document.getElementById('userDropdown').classList.remove('show'); document.getElementById('pwdModal').style.display='flex'">🔑 Change Password</button>
                 <a href="/logout" class="user-dropdown-logout" onclick="sessionStorage.clear()">🚪 Logout</a>
             </div>
         </div>
@@ -244,7 +293,88 @@
             </a>
         </div>
     </div>
+    <!-- Change Password Modal -->
+    <div class="pwd-modal-overlay" id="pwdModal" onclick="if(event.target===this)closePwdModal()">
+        <div class="pwd-modal">
+            <h3>🔑 Change Password</h3>
+            <p>Enter your current password and choose a new one</p>
+            <div class="pwd-field">
+                <label>Current Password</label>
+                <input type="password" id="pwdCurrent" placeholder="Enter current password">
+            </div>
+            <div class="pwd-field">
+                <label>New Password</label>
+                <input type="password" id="pwdNew" placeholder="Enter new password">
+            </div>
+            <div class="pwd-field">
+                <label>Confirm New Password</label>
+                <input type="password" id="pwdConfirm" placeholder="Re-enter new password">
+            </div>
+            <div class="pwd-btns">
+                <button class="pwd-btn pwd-btn-cancel" onclick="closePwdModal()">Cancel</button>
+                <button class="pwd-btn pwd-btn-save" id="pwdSaveBtn" onclick="changePassword()">Update Password</button>
+            </div>
+            <div class="pwd-msg" id="pwdMsg"></div>
+        </div>
+    </div>
+
     <script>
+        function closePwdModal() {
+            document.getElementById('pwdModal').style.display = 'none';
+            document.getElementById('pwdCurrent').value = '';
+            document.getElementById('pwdNew').value = '';
+            document.getElementById('pwdConfirm').value = '';
+            const msg = document.getElementById('pwdMsg');
+            msg.className = 'pwd-msg'; msg.textContent = '';
+        }
+
+        function changePassword() {
+            const current = document.getElementById('pwdCurrent').value;
+            const newPwd = document.getElementById('pwdNew').value;
+            const confirm = document.getElementById('pwdConfirm').value;
+            const msg = document.getElementById('pwdMsg');
+            const btn = document.getElementById('pwdSaveBtn');
+
+            if (!current || !newPwd || !confirm) {
+                msg.className = 'pwd-msg error'; msg.textContent = '⚠️ Please fill in all fields'; return;
+            }
+            if (newPwd.length < 4) {
+                msg.className = 'pwd-msg error'; msg.textContent = '⚠️ New password must be at least 4 characters'; return;
+            }
+            if (newPwd !== confirm) {
+                msg.className = 'pwd-msg error'; msg.textContent = '⚠️ New passwords do not match'; return;
+            }
+            if (current === newPwd) {
+                msg.className = 'pwd-msg error'; msg.textContent = '⚠️ New password must be different from current'; return;
+            }
+
+            btn.disabled = true; btn.textContent = 'Updating...';
+            msg.className = 'pwd-msg'; msg.textContent = '';
+
+            fetch('/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ currentPassword: current, newPassword: newPwd })
+            })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false; btn.textContent = 'Update Password';
+                if (data.success) {
+                    msg.className = 'pwd-msg success';
+                    msg.textContent = '✅ Password changed successfully!';
+                    setTimeout(closePwdModal, 1500);
+                } else {
+                    msg.className = 'pwd-msg error';
+                    msg.textContent = '❌ ' + (data.error || 'Failed to change password');
+                }
+            })
+            .catch(() => {
+                btn.disabled = false; btn.textContent = 'Update Password';
+                msg.className = 'pwd-msg error';
+                msg.textContent = '❌ Network error. Please try again.';
+            });
+        }
+
         // User profile dropdown
         document.addEventListener('click', function(e) {
             if (!e.target.closest('.user-profile')) {

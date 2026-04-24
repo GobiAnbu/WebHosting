@@ -564,6 +564,48 @@ def verify_whatsapp():
 def check_role():
     return jsonify({"role": session.get("role", "user"), "username": session.get("username", ""), "chitFile": session.get("chitFile", "")})
 
+@app.route("/change-password", methods=["POST"])
+@login_required
+def change_password():
+    data = request.get_json()
+    current_password = data.get("currentPassword", "")
+    new_password = data.get("newPassword", "")
+    if not current_password or not new_password:
+        return jsonify({"success": False, "error": "Please fill in all fields"})
+    if len(new_password) < 4:
+        return jsonify({"success": False, "error": "New password must be at least 4 characters"})
+
+    username = session.get("username", "")
+    # Verify current password
+    user = None
+    try:
+        user = find_user(username)
+    except Exception:
+        pass
+
+    if user:
+        if user.get("password") != current_password:
+            return jsonify({"success": False, "error": "Current password is incorrect"})
+        # Update in Google Sheets
+        try:
+            from google_sheets_api import update_user as gs_update_user_fn
+            gs_update_user_fn(username, password=new_password)
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)})
+    else:
+        # Fallback to config.json
+        cfg = load_config()
+        users = cfg.get("users", {})
+        if username in users:
+            if users[username].get("password") != current_password:
+                return jsonify({"success": False, "error": "Current password is incorrect"})
+            users[username]["password"] = new_password
+            cfg["users"] = users
+            save_config(cfg)
+            return jsonify({"success": True})
+        return jsonify({"success": False, "error": "User not found"})
+
 @app.route("/admin")
 @admin_required
 def admin_page():
