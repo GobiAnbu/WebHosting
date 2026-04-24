@@ -15,7 +15,8 @@ from google_sheets_api import (
     get_members, get_all_members,
     get_chit_number as gs_get_chit_number, update_campaign,
     get_reminder_data, get_contact_number, get_all_chit_data,
-    get_chit_view_data as gs_get_chit_view_data
+    get_chit_view_data as gs_get_chit_view_data,
+    refresh_all_files
 )
 
 import threading
@@ -34,24 +35,15 @@ def make_session_permanent():
 _bg_thread_started = False
 
 def background_refresh():
-    """Continuously refresh cache every 10 seconds in background."""
+    """Continuously refresh cache in background using parallel fetches."""
+    # Initial warm-up: refresh all files immediately on startup
+    refresh_all_files()
     while True:
+        time.sleep(30)  # Refresh every 30 seconds (parallel makes this fast enough)
         try:
-            folders = gs_get_chit_folders()
-            for folder in folders:
-                files = gs_get_chit_files(folder)
-                for f in files:
-                    try:
-                        get_all_chit_data(f, force_refresh=True)
-                    except Exception:
-                        pass
-                    try:
-                        gs_get_chit_view_data(f, force_refresh=True)
-                    except Exception:
-                        pass
+            refresh_all_files()
         except Exception:
             pass
-        time.sleep(10)
 
 def start_background_refresh():
     global _bg_thread_started
@@ -362,15 +354,18 @@ def update_member_payment():
     if not chit_file or not member_name or not month:
         return jsonify({"error": "Missing parameters"}), 400
     try:
-        from google_sheets_api import clear_cache
+        from google_sheets_api import clear_cache, _refresh_single_file
         result = requests.post(
             os.environ.get("APPS_SCRIPT_URL", ""),
             params={"action": "updateMemberPayment", "key": os.environ.get("APPS_SCRIPT_API_KEY", ""), "file": chit_file},
             json={"memberName": member_name, "month": month, "status": status},
             timeout=30
         )
+        resp_data = result.json()
         clear_cache(chit_file)
-        return jsonify(result.json())
+        # Re-fetch in background so cache is warm for next request
+        threading.Thread(target=_refresh_single_file, args=(chit_file,), daemon=True).start()
+        return jsonify(resp_data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

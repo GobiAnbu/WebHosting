@@ -1,6 +1,8 @@
 import requests
 import os
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ========================================================
 # Set these as environment variables:
@@ -11,29 +13,65 @@ APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL", "")
 API_KEY = os.environ.get("APPS_SCRIPT_API_KEY", "")
 
 # ==================== CACHE ====================
-# Cache - background thread refreshes every 10 seconds
 _cache = {}
-CACHE_TTL = 600  # 10 minutes fallback (background thread refreshes every 10 sec)
+_cache_lock = threading.Lock()
+CACHE_TTL = 600       # 10 min hard expiry
+CACHE_STALE = 30      # After 30s, data is "stale" but still served while refreshing
+_refreshing_keys = set()  # Track keys currently being refreshed
 
-def _get_cached(key):
-    if key in _cache:
-        data, ts = _cache[key]
-        if time.time() - ts < CACHE_TTL:
-            return data
-        del _cache[key]
+def _get_cached(key, allow_stale=True):
+    """Get cached data. If allow_stale=True, returns stale data and triggers background refresh."""
+    with _cache_lock:
+        if key in _cache:
+            data, ts = _cache[key]
+            age = time.time() - ts
+            if age < CACHE_STALE:
+                return data  # Fresh
+            if age < CACHE_TTL and allow_stale:
+                # Stale but usable — trigger background refresh if not already running
+                if key not in _refreshing_keys:
+                    _refreshing_keys.add(key)
+                    threading.Thread(target=_bg_refresh_key, args=(key,), daemon=True).start()
+                return data  # Return stale data immediately
+            if age >= CACHE_TTL:
+                del _cache[key]
     return None
 
+def _bg_refresh_key(key):
+    """Background refresh a single cache key."""
+    try:
+        if key.startswith("alldata_"):
+            file_name = key[len("alldata_"):]
+            _fetch_and_cache("getAllChitData", file_name, key)
+        elif key.startswith("viewdata_"):
+            file_name = key[len("viewdata_"):]
+            _fetch_and_cache("getChitViewData", file_name, key)
+    except Exception:
+        pass
+    finally:
+        with _cache_lock:
+            _refreshing_keys.discard(key)
+
+def _fetch_and_cache(action, file_name, cache_key):
+    """Fetch from Apps Script and store in cache."""
+    resp = requests.get(_get_url(), params=_params(action, file=file_name), timeout=30)
+    data = resp.json()
+    _set_cache(cache_key, data)
+    return data
+
 def _set_cache(key, data):
-    _cache[key] = (data, time.time())
+    with _cache_lock:
+        _cache[key] = (data, time.time())
 
 def clear_cache(file=None):
     """Clear cache for a specific file or all."""
-    if file:
-        keys_to_del = [k for k in _cache if file in k]
-        for k in keys_to_del:
-            del _cache[k]
-    else:
-        _cache.clear()
+    with _cache_lock:
+        if file:
+            keys_to_del = [k for k in _cache if file in k]
+            for k in keys_to_del:
+                del _cache[k]
+        else:
+            _cache.clear()
 
 def _get_url():
     if not APPS_SCRIPT_URL:
@@ -116,10 +154,7 @@ def get_all_chit_data(spreadsheet_name, force_refresh=False):
         cached = _get_cached(cache_key)
         if cached is not None:
             return cached
-    resp = requests.get(_get_url(), params=_params("getAllChitData", file=spreadsheet_name), timeout=30)
-    data = resp.json()
-    _set_cache(cache_key, data)
-    return data
+    return _fetch_and_cache("getAllChitData", spreadsheet_name, cache_key)
 
 def get_members(spreadsheet_name):
     """Get members who haven't withdrawn — uses batch endpoint."""
@@ -178,7 +213,43 @@ def get_chit_view_data(spreadsheet_name, force_refresh=False):
         cached = _get_cached(cache_key)
         if cached is not None:
             return cached
-    resp = requests.get(_get_url(), params=_params("getChitViewData", file=spreadsheet_name), timeout=30)
-    data = resp.json()
-    _set_cache(cache_key, data)
-    return data
+    return _fetch_and_cache("getChitViewData", spreadsheet_name, cache_key)
+
+# ==================== PARALLEL BACKGROUND REFRESH ====================
+
+def refresh_all_files():
+    """Refresh all chit files in parallel using thread pool."""
+    try:
+        folders = get_chit_folders()
+        all_files = []
+        for folder in folders:
+            files = get_chit_files(folder)
+            all_files.extend(files)
+
+        if not all_files:
+            return
+
+        # Use thread pool to refresh files in parallel (max 4 concurrent)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = []
+            for f in all_files:
+                futures.append(executor.submit(_refresh_single_file, f))
+            # Wait for all to complete (with timeout)
+            for future in as_completed(futures, timeout=120):
+                try:
+                    future.result()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+def _refresh_single_file(file_name):
+    """Refresh both cache entries for a single file."""
+    try:
+        _fetch_and_cache("getAllChitData", file_name, f"alldata_{file_name}")
+    except Exception:
+        pass
+    try:
+        _fetch_and_cache("getChitViewData", file_name, f"viewdata_{file_name}")
+    except Exception:
+        pass
