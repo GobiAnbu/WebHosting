@@ -134,9 +134,7 @@
         .empty-state { text-align: center; padding: 40px; color: rgba(255,255,255,0.3); }
 
         /* Search */
-        .search-bar {
-            margin-bottom: 16px;
-        }
+        .search-bar { margin-bottom: 16px; }
         .search-bar input {
             width: 100%; padding: 10px 16px; background: rgba(255,255,255,0.06);
             border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
@@ -145,8 +143,10 @@
         .search-bar input::placeholder { color: rgba(255,255,255,0.3); }
         .search-bar input:focus { border-color: #00b4d8; }
 
-        .payment-badge { cursor: pointer; user-select: none; transition: opacity 0.2s; }
+        .payment-badge { cursor: pointer; user-select: none; transition: all 0.15s; }
         .payment-badge:hover { opacity: 0.7; }
+        .payment-badge.updating { opacity: 0.4; pointer-events: none; animation: pulse 0.6s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.6; } }
 
         @media (max-width: 600px) {
             .kv-grid { grid-template-columns: 1fr; }
@@ -193,14 +193,12 @@
             <button class="tab-btn" onclick="switchTab('members', this)">👥 Members</button>
         </div>
 
-        <!-- Tab 1: Chit Details + ChitNumberDetails -->
         <div class="tab-content active" id="tab-details">
             <div id="detailsContent">
                 <div class="empty-state">Select a chit file above to view data</div>
             </div>
         </div>
 
-        <!-- Tab 2: Chit Members -->
         <div class="tab-content" id="tab-members">
             <div id="membersContent">
                 <div class="empty-state">Select a chit file above to view members</div>
@@ -209,6 +207,11 @@
     </div>
 
 <script>
+    // ===== Cached data for lazy rendering =====
+    let cachedMembersData = null;
+    let cachedMembersHeaders = null;
+    let membersRendered = false;
+
     // ===== User Profile =====
     document.addEventListener('click', function(e) {
         if (!e.target.closest('.user-profile')) document.getElementById('userDropdown').classList.remove('show');
@@ -227,17 +230,27 @@
         files.forEach(f => { const o = document.createElement('option'); o.value = f; o.textContent = f; sel.appendChild(o); });
     });
 
-    // ===== Tab Switching =====
+    // ===== Tab Switching (with lazy render for members) =====
     function switchTab(tab, btn) {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.getElementById('tab-' + tab).classList.add('active');
         btn.classList.add('active');
+
+        // Lazy render members tab on first switch
+        if (tab === 'members' && !membersRendered && cachedMembersData) {
+            renderMembers(cachedMembersData, cachedMembersHeaders);
+            membersRendered = true;
+        }
     }
 
     // ===== Load View Data =====
     function loadViewData() {
         const file = document.getElementById('chitFileSelect').value;
+        cachedMembersData = null;
+        cachedMembersHeaders = null;
+        membersRendered = false;
+
         if (!file) {
             document.getElementById('tabBar').style.display = 'none';
             document.getElementById('detailsContent').innerHTML = '<div class="empty-state">Select a chit file above to view data</div>';
@@ -249,6 +262,12 @@
         document.getElementById('detailsContent').innerHTML = '<div class="loading-msg"><div class="spinner"></div><br>Loading chit data...</div>';
         document.getElementById('membersContent').innerHTML = '<div class="loading-msg"><div class="spinner"></div><br>Loading members...</div>';
 
+        // Reset to details tab
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-details').classList.add('active');
+        document.querySelectorAll('.tab-btn')[0].classList.add('active');
+
         fetch('/get-chit-view-data?chitFile=' + encodeURIComponent(file))
             .then(r => r.json())
             .then(data => {
@@ -257,8 +276,17 @@
                     document.getElementById('membersContent').innerHTML = '<div class="empty-state">⚠️ ' + data.error + '</div>';
                     return;
                 }
+                // Render details immediately (visible tab)
                 renderDetails(data.chitDetails, data.chitNumberRows, data.chitNumberHeaders);
-                renderMembers(data.chitMembers, data.chitMemberHeaders);
+
+                // Cache members data — render only when tab is clicked
+                cachedMembersData = data.chitMembers;
+                cachedMembersHeaders = data.chitMemberHeaders;
+                membersRendered = false;
+
+                // Update members tab loading indicator to ready state
+                const memberCount = data.chitMembers ? data.chitMembers.length : 0;
+                document.getElementById('membersContent').innerHTML = '<div class="empty-state">👥 ' + memberCount + ' members ready — click the Members tab to view</div>';
             })
             .catch(err => {
                 document.getElementById('detailsContent').innerHTML = '<div class="empty-state">⚠️ Failed to load data</div>';
@@ -270,7 +298,6 @@
     function renderDetails(chitDetails, chitNumberRows, chitNumberHeaders) {
         let html = '';
 
-        // Chit Details Card
         if (chitDetails && Object.keys(chitDetails).length > 0) {
             html += '<div class="info-card">';
             html += '<div class="info-card-title"><span class="icon">📄</span> Chit Details</div>';
@@ -286,7 +313,6 @@
             html += '</div></div>';
         }
 
-        // Chit Number Details Table
         if (chitNumberRows && chitNumberRows.length > 0) {
             const headers = chitNumberHeaders && chitNumberHeaders.length > 0 ? chitNumberHeaders : Object.keys(chitNumberRows[0]);
             html += '<div class="info-card">';
@@ -318,7 +344,7 @@
         document.getElementById('detailsContent').innerHTML = html;
     }
 
-    // ===== Render Members =====
+    // ===== Render Members (called lazily) =====
     function renderMembers(chitMembers, chitMemberHeaders) {
         if (!chitMembers || chitMembers.length === 0) {
             document.getElementById('membersContent').innerHTML = '<div class="empty-state">No members found</div>';
@@ -326,22 +352,18 @@
         }
 
         const headers = chitMemberHeaders && chitMemberHeaders.length > 0 ? chitMemberHeaders : Object.keys(chitMembers[0]);
-
-        // Find index after MobileNumber to apply date formatting
         const mobileIdx = headers.findIndex(h => h.toLowerCase() === 'mobilenumber');
         const dateStartIdx = mobileIdx >= 0 ? mobileIdx + 1 : headers.length;
 
-        // Filter out future month columns — only show up to current month
         const now = new Date();
         const currentYear = now.getFullYear();
-        const currentMonth = now.getMonth(); // 0-based
+        const currentMonth = now.getMonth();
 
         const filteredIndices = [];
         headers.forEach((h, i) => {
             if (i < dateStartIdx) {
                 filteredIndices.push(i);
             } else {
-                // Parse the header as a date and check if it's <= current month
                 const parsed = parseDateHeader(h);
                 if (parsed && (parsed.year < currentYear || (parsed.year === currentYear && parsed.month <= currentMonth))) {
                     filteredIndices.push(i);
@@ -349,62 +371,69 @@
             }
         });
 
-        // Format headers after MobileNumber as MMM-YYYY
-        const displayHeaders = filteredIndices.map(i => {
-            if (i >= dateStartIdx) {
-                const fmt = toMMMyyyy(headers[i]);
-                return fmt !== null ? fmt : headers[i];
+        // Precompute display headers map (avoids indexOf in loop)
+        const displayHeadersMap = new Map();
+        const displayHeaders = filteredIndices.map((idx, pos) => {
+            let display;
+            if (idx >= dateStartIdx) {
+                const fmt = toMMMyyyy(headers[idx]);
+                display = fmt !== null ? fmt : headers[idx];
+            } else {
+                display = headers[idx];
             }
-            return headers[i];
+            displayHeadersMap.set(idx, display);
+            return display;
         });
 
-        let html = '';
+        // Build HTML using array join (faster than string concat for large tables)
+        const parts = [];
+        parts.push('<div class="search-bar"><input type="text" id="memberSearch" placeholder="🔍 Search members..." oninput="filterMembers()"></div>');
+        parts.push('<div class="info-card">');
+        parts.push('<div class="info-card-title"><span class="icon">👥</span> Chit Members <span style="font-size:0.8rem;font-weight:500;color:rgba(255,255,255,0.4);margin-left:8px;">(' + chitMembers.length + ' members)</span></div>');
+        parts.push('<div class="table-wrap"><table><thead><tr><th>#</th>');
+        displayHeaders.forEach(h => { parts.push('<th>' + escHtml(h) + '</th>'); });
+        parts.push('</tr></thead><tbody id="membersTableBody">');
 
-        // Search bar
-        html += '<div class="search-bar"><input type="text" id="memberSearch" placeholder="🔍 Search members..." oninput="filterMembers()"></div>';
-
-        html += '<div class="info-card">';
-        html += '<div class="info-card-title"><span class="icon">👥</span> Chit Members <span style="font-size:0.8rem;font-weight:500;color:rgba(255,255,255,0.4);margin-left:8px;">(' + chitMembers.length + ' members)</span></div>';
-        html += '<div class="table-wrap"><table><thead><tr>';
-        html += '<th>#</th>';
-        displayHeaders.forEach(h => { html += '<th>' + escHtml(h) + '</th>'; });
-        html += '</tr></thead><tbody id="membersTableBody">';
-        chitMembers.forEach((row, idx) => {
+        for (let idx = 0; idx < chitMembers.length; idx++) {
+            const row = chitMembers[idx];
             const memberName = row['Name'] || row['name'] || '';
-            html += '<tr>';
-            html += '<td>' + (idx + 1) + '</td>';
-            filteredIndices.forEach(i => {
+            parts.push('<tr><td>' + (idx + 1) + '</td>');
+            for (let fi = 0; fi < filteredIndices.length; fi++) {
+                const i = filteredIndices[fi];
                 const h = headers[i];
-                let val = row[h];
+                const val = row[h];
                 const lh = h.toLowerCase();
                 if (lh === 'withdraw') {
                     const isYes = String(val).trim().toLowerCase() === 'yes';
-                    val = '<span class="' + (isYes ? 'badge-yes' : 'badge-no') + '">' + (isYes ? 'Yes' : 'No') + '</span>';
-                    html += '<td>' + val + '</td>';
+                    parts.push('<td><span class="' + (isYes ? 'badge-yes' : 'badge-no') + '">' + (isYes ? 'Yes' : 'No') + '</span></td>');
                 } else if (i >= dateStartIdx) {
                     const isPaid = String(val).trim().toLowerCase() === 'paid';
-                    const displayMonth = displayHeaders[filteredIndices.indexOf(i)];
+                    const displayMonth = displayHeadersMap.get(i);
                     const cls = isPaid ? 'badge-yes' : 'badge-no';
                     const label = isPaid ? 'Paid' : 'Not Paid';
-                    html += '<td><span class="' + cls + ' payment-badge" style="cursor:pointer;" onclick="togglePayment(this, \'' + escAttr(memberName) + '\', \'' + escAttr(displayMonth) + '\')">' + label + '</span></td>';
+                    parts.push('<td><span class="' + cls + ' payment-badge" onclick="togglePayment(this, \'' + escAttr(memberName) + '\', \'' + escAttr(displayMonth) + '\')">' + label + '</span></td>');
                 } else {
-                    html += '<td>' + escHtml(String(val !== null && val !== undefined ? val : '')) + '</td>';
+                    parts.push('<td>' + escHtml(String(val !== null && val !== undefined ? val : '')) + '</td>');
                 }
-            });
-            html += '</tr>';
-        });
-        html += '</tbody></table></div></div>';
+            }
+            parts.push('</tr>');
+        }
+        parts.push('</tbody></table></div></div>');
 
-        document.getElementById('membersContent').innerHTML = html;
+        document.getElementById('membersContent').innerHTML = parts.join('');
     }
 
-    // ===== Filter Members =====
+    // ===== Filter Members (debounced) =====
+    let filterTimeout = null;
     function filterMembers() {
-        const q = document.getElementById('memberSearch').value.toLowerCase();
-        const rows = document.querySelectorAll('#membersTableBody tr');
-        rows.forEach(row => {
-            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-        });
+        clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(function() {
+            const q = document.getElementById('memberSearch').value.toLowerCase();
+            const rows = document.querySelectorAll('#membersTableBody tr');
+            for (let i = 0; i < rows.length; i++) {
+                rows[i].style.display = rows[i].textContent.toLowerCase().includes(q) ? '' : 'none';
+            }
+        }, 150);
     }
 
     // ===== Escape HTML =====
@@ -418,14 +447,16 @@
         return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
     }
 
-    // ===== Toggle Payment =====
+    // ===== Toggle Payment (optimistic UI) =====
     function togglePayment(badge, memberName, month) {
         const file = document.getElementById('chitFileSelect').value;
         if (!file) return;
         const isPaid = badge.textContent.trim() === 'Paid';
         const newStatus = isPaid ? 'Not Paid' : 'Paid';
-        badge.style.opacity = '0.4';
-        badge.style.pointerEvents = 'none';
+
+        // Optimistic UI: update immediately
+        badge.textContent = newStatus;
+        badge.className = (newStatus === 'Paid' ? 'badge-yes' : 'badge-no') + ' payment-badge updating';
 
         fetch('/update-member-payment', {
             method: 'POST',
@@ -434,18 +465,21 @@
         })
         .then(r => r.json())
         .then(data => {
-            badge.style.opacity = '1';
-            badge.style.pointerEvents = 'auto';
-            if (data.success) {
-                badge.textContent = newStatus;
-                badge.className = (newStatus === 'Paid' ? 'badge-yes' : 'badge-no') + ' payment-badge';
-            } else {
+            badge.classList.remove('updating');
+            if (!data.success) {
+                // Revert on failure
+                const revertStatus = isPaid ? 'Paid' : 'Not Paid';
+                badge.textContent = revertStatus;
+                badge.className = (revertStatus === 'Paid' ? 'badge-yes' : 'badge-no') + ' payment-badge';
                 alert('Failed to update: ' + (data.error || 'Unknown error'));
             }
         })
         .catch(err => {
-            badge.style.opacity = '1';
-            badge.style.pointerEvents = 'auto';
+            badge.classList.remove('updating');
+            // Revert on error
+            const revertStatus = isPaid ? 'Paid' : 'Not Paid';
+            badge.textContent = revertStatus;
+            badge.className = (revertStatus === 'Paid' ? 'badge-yes' : 'badge-no') + ' payment-badge';
             alert('Failed to update payment status');
         });
     }
@@ -455,24 +489,21 @@
     function toMMMyyyy(val) {
         if (!val) return val;
         const s = String(val).trim();
-        // Try dd-MM-yyyy pattern FIRST (Apps Script sends dates in this format)
         const m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
         if (m) {
             const mon = parseInt(m[2], 10) - 1;
             if (mon >= 0 && mon < 12) return monthNames[mon] + '-' + m[3];
         }
-        // Try yyyy-MM-dd (ISO format)
         const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
         if (iso) {
             const mon = parseInt(iso[2], 10) - 1;
             if (mon >= 0 && mon < 12) return monthNames[mon] + '-' + iso[1];
         }
-        // Try parsing as Date (for raw date strings like "Sat May 01 2026...")
         const d = new Date(s);
         if (!isNaN(d.getTime()) && d.getFullYear() > 1970) {
             return monthNames[d.getMonth()] + '-' + d.getFullYear();
         }
-        return null; // not a date
+        return null;
     }
 
     function formatIfDate(val) {
@@ -480,23 +511,18 @@
         return r !== null ? r : String(val !== null && val !== undefined ? val : '');
     }
 
-    // ===== Parse date header to {year, month} (month is 0-based) =====
     function parseDateHeader(val) {
         if (!val) return null;
         const s = String(val).trim();
-        // dd-MM-yyyy
         const m1 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
         if (m1) return { year: parseInt(m1[3], 10), month: parseInt(m1[2], 10) - 1 };
-        // yyyy-MM-dd
         const m2 = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
         if (m2) return { year: parseInt(m2[1], 10), month: parseInt(m2[2], 10) - 1 };
-        // MMM-yyyy
         const m3 = s.match(/^([A-Za-z]{3})-(\d{4})$/);
         if (m3) {
             const mi = monthNames.findIndex(mn => mn.toLowerCase() === m3[1].toLowerCase());
             if (mi >= 0) return { year: parseInt(m3[2], 10), month: mi };
         }
-        // Try native Date parse
         const d = new Date(s);
         if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return { year: d.getFullYear(), month: d.getMonth() };
         return null;
@@ -504,3 +530,4 @@
 </script>
 </body>
 </html>
+

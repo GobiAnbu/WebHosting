@@ -95,8 +95,17 @@
                 2. Create a new app → Select "Business" type<br>
                 3. Add "WhatsApp" product to your app<br>
                 4. Go to WhatsApp → API Setup<br>
-                5. Copy the <strong>Temporary Access Token</strong> and <strong>Phone Number ID</strong><br>
-                6. Add recipient numbers in "To" field to whitelist them
+                5. Copy the <strong>Temporary Access Token</strong> and <strong>Phone Number ID</strong>
+            </p>
+        </div>
+        <div class="info-box" style="background: rgba(255,152,0,0.1); border-color: rgba(255,152,0,0.2);">
+            <div class="info-box-title" style="color: #FFB74D;">⚠️ Development Mode vs Live Mode</div>
+            <p>
+                <strong style="color:rgba(255,255,255,0.7);">If your app is in Development mode</strong>, you can only send messages to phone numbers added as test recipients:<br><br>
+                → Meta Dashboard → Your App → <strong>WhatsApp → API Setup</strong> → scroll to <strong>"To"</strong> field → click <strong>"Manage phone number list"</strong> → add recipient numbers (up to 5)<br><br>
+                <strong style="color:rgba(255,255,255,0.7);">To send to any number</strong>, switch to Live mode:<br>
+                → <strong>App Settings → Basic</strong> → toggle <strong>App Mode to "Live"</strong><br>
+                (requires <a href="https://business.facebook.com/settings/security" target="_blank" style="color: #FFB74D;">Meta Business Verification</a>)
             </p>
         </div>
     </div>
@@ -120,6 +129,8 @@
         </div>
 
         <button class="btn-save" style="background: linear-gradient(135deg, #FF9800, #F57C00);" onclick="saveConfig()">💾 Update Token</button>
+        <button class="btn-save" style="background: linear-gradient(135deg, #2196F3, #1565C0); margin-top: 10px;" onclick="verifyToken()">🔍 Verify Token</button>
+        <div id="verifyResult" style="margin-top: 12px; padding: 12px; border-radius: 10px; display: none; font-size: 0.88rem;"></div>
     </div>
 
     <div class="card">
@@ -188,6 +199,36 @@
             }
         })
         .catch(() => showToast("❌ Error sending test!"));
+    }
+
+    function verifyToken() {
+        const box = document.getElementById("verifyResult");
+        box.style.display = "block";
+        box.style.background = "rgba(255,255,255,0.06)";
+        box.style.color = "rgba(255,255,255,0.6)";
+        box.textContent = "🔍 Verifying token...";
+
+        fetch("/verify-whatsapp")
+            .then(r => r.json())
+            .then(data => {
+                if (data.valid) {
+                    box.style.background = "rgba(76,175,80,0.15)";
+                    box.style.color = "#66bb6a";
+                    box.textContent = "✅ Token is valid! Phone: " + (data.phone || "") + " | Name: " + (data.name || "");
+                    const badge = document.getElementById("apiStatus");
+                    badge.className = "status-badge status-ok";
+                    badge.textContent = "✅ Configured & Ready";
+                } else {
+                    box.style.background = "rgba(244,67,54,0.15)";
+                    box.style.color = "#ef5350";
+                    box.innerHTML = "❌ " + (data.error || "Verification failed");
+                }
+            })
+            .catch(() => {
+                box.style.background = "rgba(244,67,54,0.15)";
+                box.style.color = "#ef5350";
+                box.textContent = "❌ Could not verify token";
+            });
     }
 
     function showToast(msg) {

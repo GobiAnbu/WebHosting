@@ -45,6 +45,10 @@ def background_refresh():
                         get_all_chit_data(f, force_refresh=True)
                     except Exception:
                         pass
+                    try:
+                        gs_get_chit_view_data(f, force_refresh=True)
+                    except Exception:
+                        pass
         except Exception:
             pass
         time.sleep(10)
@@ -99,7 +103,7 @@ def send_whatsapp_message(phone, message):
     phone = str(phone).strip()
     if not phone.startswith("91"):
         phone = "91" + phone
-    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    url = f"https://graph.facebook.com/v22.0/{phone_id}/messages"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
@@ -116,8 +120,28 @@ def send_whatsapp_message(phone, message):
         if resp.status_code == 200 and "messages" in result:
             return {"success": True, "message_id": result["messages"][0]["id"]}
         else:
-            error_msg = result.get("error", {}).get("message", resp.text)
-            return {"success": False, "error": error_msg}
+            error_obj = result.get("error", {})
+            error_code = error_obj.get("code", "")
+            error_subcode = error_obj.get("error_subcode", "")
+            error_msg = error_obj.get("message", resp.text)
+
+            # Provide actionable error messages for common issues
+            if error_code == 200:
+                detail = (
+                    "WhatsApp API permission denied. This usually means: "
+                    "(1) Your app is in Development mode — go to Meta App Dashboard → App Settings → Basic → toggle to Live mode. "
+                    "(2) Or your access token has expired — generate a new System User token in Meta Business Settings."
+                )
+            elif error_code == 190:
+                detail = "Access token has expired or is invalid. Go to Settings and update your WhatsApp API Token with a new one from Meta Business Suite."
+            elif error_code == 131031:
+                detail = f"Recipient phone number {phone} is not a valid WhatsApp number or is not opted in."
+            elif error_code == 368:
+                detail = "Your WhatsApp Business API has been temporarily rate limited. Please wait and try again."
+            else:
+                detail = f"{error_msg} (code: {error_code}, subcode: {error_subcode})" if error_code else error_msg
+
+            return {"success": False, "error": detail}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -505,6 +529,38 @@ def send_wa_direct():
     message = data.get("message", "")
     result = send_whatsapp_message(phone, message)
     return jsonify(result)
+
+@app.route("/verify-whatsapp")
+@admin_required
+def verify_whatsapp():
+    """Verify WhatsApp API token and phone number ID are valid."""
+    token = os.environ.get("WHATSAPP_API_TOKEN", "")
+    phone_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+    if not token or not phone_id:
+        return jsonify({"valid": False, "error": "WhatsApp API not configured."})
+    try:
+        # Check token by querying the phone number ID
+        resp = requests.get(
+            f"https://graph.facebook.com/v22.0/{phone_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15
+        )
+        result = resp.json()
+        if "error" in result:
+            err = result["error"]
+            code = err.get("code", "")
+            msg = err.get("message", "")
+            if code == 190:
+                return jsonify({"valid": False, "error": "Access token is expired or invalid. Generate a new one from Meta Business Suite."})
+            elif code == 200:
+                return jsonify({"valid": False, "error": "API permission denied. Your app may be in Development mode — switch to Live in Meta App Dashboard."})
+            else:
+                return jsonify({"valid": False, "error": f"{msg} (code: {code})"})
+        # Success - token and phone ID are valid
+        display_name = result.get("verified_name", result.get("display_phone_number", "OK"))
+        return jsonify({"valid": True, "phone": result.get("display_phone_number", ""), "name": display_name})
+    except Exception as e:
+        return jsonify({"valid": False, "error": str(e)})
 
 # ==================== ADMIN ROUTES ====================
 

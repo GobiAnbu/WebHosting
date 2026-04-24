@@ -171,12 +171,13 @@ def update_campaign(spreadsheet_name, name, chit_amount, discount_amount, amount
                          }, timeout=30)
     return resp.json()
 
-def get_chit_view_data(spreadsheet_name):
+def get_chit_view_data(spreadsheet_name, force_refresh=False):
     """Get full view data: chitDetails sheet, all chitNumberDetails rows, and all members."""
     cache_key = f"viewdata_{spreadsheet_name}"
-    cached = _get_cached(cache_key)
-    if cached is not None:
-        return cached
+    if not force_refresh:
+        cached = _get_cached(cache_key)
+        if cached is not None:
+            return cached
     resp = requests.get(_get_url(), params=_params("getChitViewData", file=spreadsheet_name), timeout=30)
     data = resp.json()
     _set_cache(cache_key, data)
