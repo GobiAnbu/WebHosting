@@ -663,8 +663,22 @@ WEBHOOK_VERIFY_TOKEN = os.environ.get("WEBHOOK_VERIFY_TOKEN", "chitfund_bot_veri
 # { "919876543210": { "step": "select_chit" | "ready", "chitFile": "xxx.xlsx", "chitFiles": [...] } }
 _bot_sessions = {}
 
-def _get_all_chit_files_list():
-    """Get all chit files across all folders."""
+# Cached mapping: normalized phone → [{"file": "x.xlsx", "chitName": "..."}]
+_contact_chit_cache = {"data": {}, "timestamp": 0}
+_CONTACT_CACHE_TTL = 120  # seconds
+
+def _normalize_phone(phone):
+    """Strip +, leading 0, and country code 91."""
+    p = str(phone).strip().replace(" ", "").lstrip("+").lstrip("0")
+    if p.startswith("91") and len(p) > 10:
+        p = p[2:]
+    return p
+
+def _build_contact_chit_map():
+    """Build a mapping of phone number → chit files. Uses parallel fetch."""
+    from concurrent.futures import ThreadPoolExecutor
+    mapping = {}  # normalized_phone → [{"file": ..., "chitName": ...}]
+
     all_files = []
     try:
         folders = gs_get_chit_folders()
@@ -672,8 +686,40 @@ def _get_all_chit_files_list():
             files = gs_get_chit_files(folder)
             all_files.extend(files)
     except Exception:
-        pass
-    return all_files
+        return mapping
+
+    def fetch_info(cf):
+        try:
+            return cf, gs_get_chit_number(cf)
+        except Exception:
+            return cf, {}
+
+    # Fetch all chit info in parallel (max 10 threads)
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(fetch_info, all_files))
+
+    for cf, info in results:
+        contact = str(info.get("contactNumber", "")).strip().replace(" ", "")
+        clean = _normalize_phone(contact)
+        if clean:
+            if clean not in mapping:
+                mapping[clean] = []
+            mapping[clean].append({
+                "file": cf,
+                "chitName": info.get("chitName", cf.replace(".xlsx", ""))
+            })
+
+    return mapping
+
+def _get_chits_for_phone(phone):
+    """Get chit files belonging to a phone number, using cache."""
+    now = time.time()
+    if now - _contact_chit_cache["timestamp"] > _CONTACT_CACHE_TTL or not _contact_chit_cache["data"]:
+        _contact_chit_cache["data"] = _build_contact_chit_map()
+        _contact_chit_cache["timestamp"] = now
+
+    clean = _normalize_phone(phone)
+    return _contact_chit_cache["data"].get(clean, [])
 
 @app.route("/webhook", methods=["GET"])
 def webhook_verify():
@@ -757,31 +803,10 @@ def _handle_bot_message(from_number, text):
 
         # ---- RESET: hi / hello / start → show chit list ----
         if text_lower in ("hi", "hello", "hey", "hii", "hai", "start", "reset", "menu"):
-            all_files = _get_all_chit_files_list()
-            if not all_files:
-                send_whatsapp_message(from_number, "⚠️ No chit files found. Please contact the administrator.")
-                return
+            # Fast lookup using cached contact-to-chit mapping
+            matched = _get_chits_for_phone(from_number)
 
-            # Normalize sender number for matching
-            clean_from = from_number.lstrip("+").lstrip("0")
-            if clean_from.startswith("91"):
-                clean_from = clean_from[2:]
-
-            # Filter chits where contactNumber matches the sender's phone
-            chit_files = []
-            for cf in all_files:
-                try:
-                    info = gs_get_chit_number(cf)
-                    contact = str(info.get("contactNumber", "")).strip().replace(" ", "")
-                    clean_contact = contact.lstrip("+").lstrip("0")
-                    if clean_contact.startswith("91"):
-                        clean_contact = clean_contact[2:]
-                    if clean_contact and clean_contact == clean_from:
-                        chit_files.append(cf)
-                except Exception:
-                    pass
-
-            if not chit_files:
+            if not matched:
                 send_whatsapp_message(from_number,
                     "🔍 Sorry, your phone number is not linked to any chit.\n\n"
                     "Please contact the chit administrator to add your number.\n\n"
@@ -790,18 +815,12 @@ def _handle_bot_message(from_number, text):
                 return
 
             # If only 1 chit, auto-select it
-            if len(chit_files) == 1:
-                selected = chit_files[0]
-                try:
-                    info = gs_get_chit_number(selected)
-                    chit_name = info.get("chitName", selected.replace(".xlsx", ""))
-                except Exception:
-                    chit_name = selected.replace(".xlsx", "")
-
-                _bot_sessions[from_number] = {"step": "ready", "chitFile": selected, "chitName": chit_name}
+            if len(matched) == 1:
+                m = matched[0]
+                _bot_sessions[from_number] = {"step": "ready", "chitFile": m["file"], "chitName": m["chitName"]}
                 reply = (
                     f"👋 *Welcome to Chit Fund Bot!*\n\n"
-                    f"Your chit: *{chit_name}*\n\n"
+                    f"Your chit: *{m['chitName']}*\n\n"
                     "Send any command:\n\n"
                     "📊 *status* — Chit status & details\n"
                     "💰 *balance* — Amount to pay\n"
@@ -818,17 +837,14 @@ def _handle_bot_message(from_number, text):
             # Multiple chits — show numbered list
             lines = ["👋 *Welcome to Chit Fund Bot!*\n"]
             lines.append("You have multiple chits. Please select by sending the *number*:\n")
-            for i, cf in enumerate(chit_files, 1):
-                try:
-                    info = gs_get_chit_number(cf)
-                    name = info.get("chitName", cf.replace(".xlsx", ""))
-                except Exception:
-                    name = cf.replace(".xlsx", "")
-                lines.append(f"*{i}.* {name}")
+            chit_files = []
+            for i, m in enumerate(matched, 1):
+                lines.append(f"*{i}.* {m['chitName']}")
+                chit_files.append(m["file"])
 
             lines.append("\n_Example: Send *1* to select the first chit_")
 
-            _bot_sessions[from_number] = {"step": "select_chit", "chitFiles": chit_files}
+            _bot_sessions[from_number] = {"step": "select_chit", "chitFiles": chit_files, "chitNames": [m["chitName"] for m in matched]}
             send_whatsapp_message(from_number, "\n".join(lines))
             return
 
