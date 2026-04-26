@@ -141,6 +141,44 @@
         </div>
         <button class="btn-save" onclick="testSend()" style="background: linear-gradient(135deg, #25D366, #128C7E);">📤 Send Test Message</button>
     </div>
+
+    <!-- WhatsApp Bot Card -->
+    <div class="card">
+        <div class="card-title">🤖 WhatsApp Bot (Auto-Reply)</div>
+        <div class="info-box" style="background: rgba(76,175,80,0.1); border-color: rgba(76,175,80,0.2);">
+            <div class="info-box-title" style="color: #81C784;">✨ How it works</div>
+            <p>
+                Members can message your WhatsApp Business number and the bot will auto-reply with chit details.<br><br>
+                <strong style="color:rgba(255,255,255,0.7);">Commands members can send:</strong><br>
+                • <strong>hi / hello</strong> — Welcome message with menu<br>
+                • <strong>status</strong> — Chit number, remaining, amount<br>
+                • <strong>balance</strong> — Amount to pay this month<br>
+                • <strong>members</strong> — List all members<br>
+                • <strong>details</strong> — Full chit information<br>
+                • <strong>Their name</strong> — Personal payment history
+            </p>
+        </div>
+        <div class="info-box">
+            <div class="info-box-title">🔧 Setup Instructions</div>
+            <p>
+                1. Go to <a href="https://developers.facebook.com" target="_blank">Meta Developer Dashboard</a> → Your App<br>
+                2. Click <strong>WhatsApp → Configuration</strong><br>
+                3. Under <strong>Webhook</strong>, click <strong>Edit</strong><br>
+                4. Set <strong>Callback URL</strong> to:<br>
+                <code id="webhookUrl" style="background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:6px; font-size:0.8rem; word-break:break-all; display:inline-block; margin:6px 0; cursor:pointer;" onclick="copyWebhookUrl()" title="Click to copy"></code><br>
+                5. Set <strong>Verify Token</strong> to:<br>
+                <code id="verifyTokenDisplay" style="background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:6px; font-size:0.8rem; cursor:pointer;" onclick="copyVerifyToken()" title="Click to copy"></code><br>
+                6. Click <strong>Verify and Save</strong><br>
+                7. Under <strong>Webhook fields</strong>, subscribe to <strong>messages</strong>
+            </p>
+        </div>
+        <div class="form-group">
+            <label class="form-label">🔑 Webhook Verify Token</label>
+            <input class="form-input" id="webhookVerifyToken" type="text" placeholder="Your webhook verify token">
+            <p style="color:rgba(255,255,255,0.3); font-size:0.75rem; margin-top:4px;">Change this if you want a custom token. Must match what you enter in Meta Dashboard.</p>
+        </div>
+        <button class="btn-save" style="background: linear-gradient(135deg, #4CAF50, #388E3C);" onclick="saveWebhookToken()">💾 Save Verify Token</button>
+    </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -236,6 +274,44 @@
         t.textContent = msg;
         t.classList.add("show");
         setTimeout(() => t.classList.remove("show"), 4000);
+    }
+
+    // Bot webhook setup
+    const baseUrl = window.location.origin;
+    document.getElementById('webhookUrl').textContent = baseUrl + '/webhook';
+
+    // Load current verify token
+    fetch('/get-webhook-token').then(r=>r.json()).then(data=>{
+        document.getElementById('webhookVerifyToken').value = data.token || '';
+        document.getElementById('verifyTokenDisplay').textContent = data.token || 'chitfund_bot_verify_2026';
+    }).catch(()=>{
+        document.getElementById('verifyTokenDisplay').textContent = 'chitfund_bot_verify_2026';
+    });
+
+    function copyWebhookUrl() {
+        navigator.clipboard.writeText(baseUrl + '/webhook');
+        showToast('📋 Webhook URL copied!');
+    }
+    function copyVerifyToken() {
+        const token = document.getElementById('verifyTokenDisplay').textContent;
+        navigator.clipboard.writeText(token);
+        showToast('📋 Verify token copied!');
+    }
+    function saveWebhookToken() {
+        const token = document.getElementById('webhookVerifyToken').value.trim();
+        if (!token) { showToast('⚠️ Please enter a verify token'); return; }
+        fetch('/save-webhook-token', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({token})
+        }).then(r=>r.json()).then(data=>{
+            if (data.success) {
+                showToast('✅ Verify token saved!');
+                document.getElementById('verifyTokenDisplay').textContent = token;
+            } else {
+                showToast('❌ ' + (data.error || 'Failed'));
+            }
+        }).catch(()=>showToast('❌ Network error'));
     }
 
     document.addEventListener('click', function(e) { if (!e.target.closest('.user-profile')) document.getElementById('userDropdown').classList.remove('show'); });
