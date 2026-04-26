@@ -38,10 +38,16 @@ def background_refresh():
     """Continuously refresh cache in background using parallel fetches."""
     # Initial warm-up: refresh all files immediately on startup
     refresh_all_files()
+    # Pre-build contact-chit mapping so bot responds instantly
+    _contact_chit_cache["data"] = _build_contact_chit_map()
+    _contact_chit_cache["timestamp"] = time.time()
     while True:
         time.sleep(30)  # Refresh every 30 seconds (parallel makes this fast enough)
         try:
             refresh_all_files()
+            # Rebuild contact map with fresh data
+            _contact_chit_cache["data"] = _build_contact_chit_map()
+            _contact_chit_cache["timestamp"] = time.time()
         except Exception:
             pass
 
@@ -175,9 +181,9 @@ def _send_command_menu(phone, header_text, body_text):
                 "title": "Commands",
                 "rows": [
                     {"id": "cmd_details", "title": "📋 Chit Details"},
+                    {"id": "cmd_month_status", "title": "📅 Current Month Status"},
                     {"id": "cmd_reminder", "title": "🔔 Payment Reminder"},
                     {"id": "cmd_tomorrow", "title": "📢 Chit Tomorrow"},
-                    {"id": "cmd_name_search", "title": "🔍 Payment History"},
                     {"id": "cmd_change", "title": "🔄 Change Chit"},
                 ]
             }]
@@ -730,7 +736,7 @@ _bot_sessions = {}
 
 # Cached mapping: normalized phone → [{"file": "x.xlsx", "chitName": "..."}]
 _contact_chit_cache = {"data": {}, "timestamp": 0}
-_CONTACT_CACHE_TTL = 120  # seconds
+_CONTACT_CACHE_TTL = 300  # seconds (5 minutes)
 
 def _normalize_phone(phone):
     """Strip +, leading 0, and country code 91."""
@@ -740,8 +746,7 @@ def _normalize_phone(phone):
     return p
 
 def _build_contact_chit_map():
-    """Build a mapping of phone number → chit files. Uses parallel fetch."""
-    from concurrent.futures import ThreadPoolExecutor
+    """Build a mapping of phone number → chit files. Uses cached data when available."""
     mapping = {}  # normalized_phone → [{"file": ..., "chitName": ...}]
 
     all_files = []
@@ -753,17 +758,12 @@ def _build_contact_chit_map():
     except Exception:
         return mapping
 
-    def fetch_info(cf):
+    # Try to get info from cache first (no API calls needed)
+    for cf in all_files:
         try:
-            return cf, gs_get_chit_number(cf)
+            info = gs_get_chit_number(cf)
         except Exception:
-            return cf, {}
-
-    # Fetch all chit info in parallel (max 10 threads)
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        results = list(executor.map(fetch_info, all_files))
-
-    for cf, info in results:
+            info = {}
         contact = str(info.get("contactNumber", "")).strip().replace(" ", "")
         clean = _normalize_phone(contact)
         if clean:
@@ -938,7 +938,49 @@ def _handle_bot_message(from_number, text):
                     f"⏳ Balance Chit: {info.get('balanceChit', '-')}"
                 )
                 send_whatsapp_message(from_number, reply)
-                _send_command_menu(from_number, chit_name, "What would you like to do next?")
+                return
+
+            if text_lower == "cmd_month_status":
+                try:
+                    view_data = gs_get_chit_view_data(cf)
+                    chit_rows = view_data.get("chitNumberRows", [])
+                    info = gs_get_chit_number(cf)
+                    chit_n = info.get("chitName", cf.replace(".xlsx", ""))
+
+                    # Find current month row
+                    now = date.today()
+                    current_row = None
+                    for row in chit_rows:
+                        chit_month = str(row.get("Chit Month", "")).strip()
+                        if chit_month:
+                            try:
+                                from datetime import datetime
+                                dt = datetime.strptime(chit_month, "%d-%m-%Y")
+                                if dt.month == now.month and dt.year == now.year:
+                                    current_row = row
+                                    break
+                            except Exception:
+                                pass
+
+                    if current_row:
+                        reply = (
+                            f"📅 *{chit_n}* — Current Month Status\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"📅 Chit Month: *{current_row.get('Chit Month', '-')}*\n"
+                            f"📌 Chit Number: *{current_row.get('Chit Number', '-')}*\n"
+                            f"✅ Conducted: *{current_row.get('Conducted', '-')}*\n"
+                            f"🎯 Taken By: *{current_row.get('Taken By', '-')}*\n"
+                            f"💰 Chit Amount: ₹{current_row.get('Chit Amount', '-')}\n"
+                            f"💳 Amount Per Person: ₹{current_row.get('Amount Per Person', '-')}"
+                        )
+                    else:
+                        reply = f"📅 *{chit_n}* — No data found for the current month."
+
+                    send_whatsapp_message(from_number, reply)
+                except Exception as e:
+                    print(f"[Bot] Month status error: {e}")
+                    send_whatsapp_message(from_number, "⚠️ Could not fetch current month status. Try again later.")
+                    _send_command_menu(from_number, chit_name, "What would you like to do next?")
                 return
 
             if text_lower == "cmd_reminder":
@@ -988,10 +1030,6 @@ def _handle_bot_message(from_number, text):
                 )
                 send_whatsapp_message(from_number, reply)
                 _send_command_menu(from_number, chit_name, "What would you like to do next?")
-                return
-
-            if text_lower == "cmd_name_search":
-                send_whatsapp_message(from_number, "🔍 Please type your *name* as it appears in the chit to get your payment history.")
                 return
 
             if text_lower == "cmd_change":
@@ -1052,6 +1090,10 @@ def _handle_bot_message(from_number, text):
             _handle_bot_message(from_number, "cmd_details")
             return
 
+        if text_lower in ("status", "month", "month status", "current month", "current"):
+            _handle_bot_message(from_number, "cmd_month_status")
+            return
+
         if text_lower in ("reminder", "remind", "pay reminder", "payment reminder"):
             _handle_bot_message(from_number, "cmd_reminder")
             return
@@ -1068,7 +1110,8 @@ def _handle_bot_message(from_number, text):
         else:
             reply = (
                 f"🔍 No member found with name *{text}* in *{chit_name}*.\n\n"
-                "Please type your name exactly as it appears in the chit."
+                "Please type your name exactly as it appears in the chit.\n"
+                "Send *hi* to see the menu again."
             )
             send_whatsapp_message(from_number, reply)
             _send_command_menu(from_number, chit_name, "Try again or select an option:")
@@ -1135,4 +1178,8 @@ def _search_member_in_chit(name, chit_file):
     return None
 
 if __name__ == "__main__":
+    start_background_refresh()
     app.run(debug=True, port=5001)
+else:
+    # Also start when running via gunicorn/Procfile
+    start_background_refresh()
