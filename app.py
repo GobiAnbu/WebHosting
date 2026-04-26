@@ -137,6 +137,72 @@ def send_whatsapp_message(phone, message):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+def send_whatsapp_interactive(phone, interactive_payload):
+    """Send an interactive message (buttons/list) via WhatsApp Business API."""
+    token = os.environ.get("WHATSAPP_API_TOKEN", "")
+    phone_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+    if not token or not phone_id:
+        return {"success": False, "error": "WhatsApp API not configured."}
+    phone = str(phone).strip()
+    if not phone.startswith("91"):
+        phone = "91" + phone
+    url = f"https://graph.facebook.com/v22.0/{phone_id}/messages"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": phone,
+        "type": "interactive",
+        "interactive": interactive_payload
+    }
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        result = resp.json()
+        if resp.status_code == 200 and "messages" in result:
+            return {"success": True, "message_id": result["messages"][0]["id"]}
+        return {"success": False, "error": result.get("error", {}).get("message", resp.text)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def _send_command_menu(phone, header_text, body_text):
+    """Send the command menu as an interactive list message."""
+    send_whatsapp_interactive(phone, {
+        "type": "list",
+        "header": {"type": "text", "text": header_text},
+        "body": {"text": body_text},
+        "action": {
+            "button": "📋 Select Option",
+            "sections": [{
+                "title": "Commands",
+                "rows": [
+                    {"id": "cmd_details", "title": "📋 Chit Details", "description": "Full chit info"},
+                    {"id": "cmd_reminder", "title": "🔔 Payment Reminder", "description": "Get reminder message"},
+                    {"id": "cmd_tomorrow", "title": "📢 Chit Tomorrow", "description": "Tomorrow chit reminder"},
+                    {"id": "cmd_name_search", "title": "🔍 Payment History", "description": "Search by your name"},
+                    {"id": "cmd_change", "title": "🔄 Change Chit", "description": "Select a different chit"},
+                ]
+            }]
+        }
+    })
+
+def _send_chit_selection_list(phone, matched):
+    """Send chit selection as an interactive list message."""
+    rows = []
+    for i, m in enumerate(matched):
+        rows.append({
+            "id": f"chit_{i}",
+            "title": m["chitName"][:24],  # WhatsApp max 24 chars for title
+            "description": m["file"]
+        })
+    send_whatsapp_interactive(phone, {
+        "type": "list",
+        "header": {"type": "text", "text": "👋 Welcome to Chit Fund Bot!"},
+        "body": {"text": "You have multiple chits. Please select one:"},
+        "action": {
+            "button": "🔽 Select Chit",
+            "sections": [{"title": "Your Chits", "rows": rows}]
+        }
+    })
+
 def get_chit_file():
     """Get the chit file name from query params or JSON body."""
     if request.method == "POST":
@@ -746,12 +812,23 @@ def webhook_receive():
                 if "statuses" in value:
                     continue
                 for msg in value.get("messages", []):
-                    if msg.get("type") != "text":
-                        continue
                     from_number = msg.get("from", "")
-                    text = msg.get("text", {}).get("body", "").strip()
+                    msg_type = msg.get("type", "")
+                    text = ""
+
+                    if msg_type == "text":
+                        text = msg.get("text", {}).get("body", "").strip()
+                    elif msg_type == "interactive":
+                        # Handle button or list replies
+                        interactive = msg.get("interactive", {})
+                        int_type = interactive.get("type", "")
+                        if int_type == "list_reply":
+                            text = interactive.get("list_reply", {}).get("id", "")
+                        elif int_type == "button_reply":
+                            text = interactive.get("button_reply", {}).get("id", "")
+
                     if from_number and text:
-                        print(f"[Bot] 📩 {from_number}: {text}")
+                        print(f"[Bot] 📩 {from_number}: {text} (type={msg_type})")
                         threading.Thread(target=_handle_bot_message, args=(from_number, text), daemon=True).start()
     except Exception as e:
         print(f"[Bot] Error: {e}")
@@ -814,71 +891,134 @@ def _handle_bot_message(from_number, text):
                 )
                 return
 
-            # If only 1 chit, auto-select it
+            # If only 1 chit, auto-select it and show command menu
             if len(matched) == 1:
                 m = matched[0]
                 _bot_sessions[from_number] = {"step": "ready", "chitFile": m["file"], "chitName": m["chitName"]}
-                reply = (
-                    f"👋 *Welcome to Chit Fund Bot!*\n\n"
-                    f"Your chit: *{m['chitName']}*\n\n"
-                    "Send any command:\n\n"
-                    "📊 *status* — Chit status & details\n"
-                    "💰 *balance* — Amount to pay\n"
-                    "👥 *members* — Member list\n"
-                    "📋 *details* — Full chit info\n"
-                    "🔔 *reminder* — Payment reminder message\n"
-                    "📢 *tomorrow* — Chit tomorrow message\n"
-                    "🔍 *Your name* — Your payment history\n"
-                    "❓ *help* — Show commands"
-                )
-                send_whatsapp_message(from_number, reply)
+                _send_command_menu(from_number, f"👋 Welcome!", f"Your chit: *{m['chitName']}*\n\nSelect an option below or type your *name* to get payment history.")
                 return
 
-            # Multiple chits — show numbered list
-            lines = ["👋 *Welcome to Chit Fund Bot!*\n"]
-            lines.append("You have multiple chits. Please select by sending the *number*:\n")
-            chit_files = []
-            for i, m in enumerate(matched, 1):
-                lines.append(f"*{i}.* {m['chitName']}")
-                chit_files.append(m["file"])
-
-            lines.append("\n_Example: Send *1* to select the first chit_")
-
-            _bot_sessions[from_number] = {"step": "select_chit", "chitFiles": chit_files, "chitNames": [m["chitName"] for m in matched]}
-            send_whatsapp_message(from_number, "\n".join(lines))
+            # Multiple chits — show interactive list
+            _bot_sessions[from_number] = {"step": "select_chit", "chitFiles": [m["file"] for m in matched], "chitNames": [m["chitName"] for m in matched], "matched": matched}
+            _send_chit_selection_list(from_number, matched)
             return
 
-        # ---- STEP: Waiting for chit selection ----
+        # ---- Handle interactive chit selection (chit_0, chit_1, etc.) ----
+        if text_lower.startswith("chit_"):
+            try:
+                idx = int(text_lower.replace("chit_", ""))
+                sess = _bot_sessions.get(from_number, {})
+                chit_files = sess.get("chitFiles", [])
+                chit_names = sess.get("chitNames", [])
+                if 0 <= idx < len(chit_files):
+                    selected = chit_files[idx]
+                    chit_name = chit_names[idx] if idx < len(chit_names) else selected.replace(".xlsx", "")
+                    _bot_sessions[from_number] = {"step": "ready", "chitFile": selected, "chitName": chit_name}
+                    _send_command_menu(from_number, f"✅ {chit_name}", f"You selected *{chit_name}*\n\nSelect an option below or type your *name* to get payment history.")
+                    return
+            except (ValueError, IndexError):
+                pass
+
+        # ---- Handle interactive command IDs ----
+        if text_lower.startswith("cmd_"):
+            sess = _bot_sessions.get(from_number, {})
+            if sess.get("step") != "ready":
+                send_whatsapp_message(from_number, "👋 Send *hi* to get started.")
+                return
+
+            cf = sess.get("chitFile", "")
+            chit_name = sess.get("chitName", "")
+
+            if text_lower == "cmd_details":
+                info = gs_get_chit_number(cf)
+                reply = (
+                    f"📋 *{info.get('chitName', cf)}* — Full Details\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📌 Chit Number: *{info.get('chitNumber', '-')}*\n"
+                    f"💰 Total Amount: ₹{info.get('totalAmount', '-')}\n"
+                    f"🔄 Remaining: *{info.get('chitRemaining', '-')}*\n"
+                    f"📱 GPay: {info.get('gpay', '-')}\n"
+                    f"📞 Contact: {info.get('contactNumber', '-')}\n"
+                    f"⏳ Balance Chit: {info.get('balanceChit', '-')}"
+                )
+                send_whatsapp_message(from_number, reply)
+                # Show menu again
+                _send_command_menu(from_number, f"📋 {chit_name}", "What would you like to do next?")
+                return
+
+            if text_lower == "cmd_reminder":
+                info = gs_get_chit_number(cf)
+                chit_n = info.get("chitName", cf.replace(".xlsx", ""))
+                amount = info.get("amountPerPerson", "-")
+                gpay = info.get("gpay", "-")
+                reply = (
+                    f"🔔 Reminder for *{chit_n}*\n\n"
+                    f"Hi 👋,\n\n"
+                    f"This is a friendly reminder to pay your chit amount of *₹{amount}* for this month.\n\n"
+                    f"💳 Gpay/PhonePe to *{gpay}*\n\n"
+                    f"Please make the payment at the earliest if not done.\n\n"
+                    f"———————————\n\n"
+                    f"🔔 *{chit_n}* நினைவூட்டல்\n\n"
+                    f"நட்பான நினைவூட்டல்: இந்த மாதத்திற்கான உங்கள் சிட் தொகை *₹{amount}* செலுத்தவும், இன்னும் செலுத்தவில்லை என்றால்.\n\n"
+                    f"💳 Gpay/PhonePe க்கு *{gpay}*\n\n"
+                    f"Thank you! 🙏"
+                )
+                send_whatsapp_message(from_number, reply)
+                _send_command_menu(from_number, f"🔔 {chit_name}", "What would you like to do next?")
+                return
+
+            if text_lower == "cmd_tomorrow":
+                info = gs_get_chit_number(cf)
+                chit_n = info.get("chitName", cf.replace(".xlsx", ""))
+                chit_num = info.get("chitNumber", "-")
+                contact = info.get("contactNumber", "-")
+                tomorrow = date.today() + timedelta(days=1)
+                tomorrow_str = tomorrow.strftime("%d-%m-%Y")
+                reply = (
+                    f"🔔 *Reminder: {chit_n} - Chit Tomorrow!*\n\n"
+                    f"📅 *Date:* {tomorrow_str}\n"
+                    f"📌 *Chit Number:* {chit_num}\n\n"
+                    f"Dear Members,\n"
+                    f"Tomorrow is the chit day for *{chit_n}*.\n"
+                    f"If you want to take the chit, please come and participate.\n\n"
+                    f"📞 *Contact:* {contact} (Call to confirm your interest)\n\n"
+                    f"———————————\n\n"
+                    f"🔔 *நினைவூட்டல்: {chit_n} - நாளை சிட்!*\n\n"
+                    f"📅 *தேதி:* {tomorrow_str}\n"
+                    f"📌 *சிட் எண்:* {chit_num}\n\n"
+                    f"நாளை *{chit_n}* சிட் நடக்கிறது.\n"
+                    f"நீங்கள் சிட் எடுக்க விரும்பினால், தயவுசெய்து வருகை தாருங்கள்.\n\n"
+                    f"📞 *தொடர்பு எண்:* {contact} (உங்கள் ஆர்வத்தை உறுதிப்படுத்த இந்த எண்ணை அழைக்கவும்)\n\n"
+                    f"நன்றி! 🙏"
+                )
+                send_whatsapp_message(from_number, reply)
+                _send_command_menu(from_number, f"📢 {chit_name}", "What would you like to do next?")
+                return
+
+            if text_lower == "cmd_name_search":
+                send_whatsapp_message(from_number, "🔍 Please type your *name* as it appears in the chit to get your payment history.")
+                return
+
+            if text_lower == "cmd_change":
+                _bot_sessions[from_number] = {}
+                _handle_bot_message(from_number, "hi")
+                return
+
+            return
+
+        # ---- STEP: Waiting for chit selection (also handle typed numbers) ----
         if sess.get("step") == "select_chit":
             chit_files = sess.get("chitFiles", [])
+            chit_names = sess.get("chitNames", [])
 
             # Check if user sent a number
             try:
                 choice = int(text_lower)
                 if 1 <= choice <= len(chit_files):
                     selected = chit_files[choice - 1]
-                    try:
-                        info = gs_get_chit_number(selected)
-                        chit_name = info.get("chitName", selected.replace(".xlsx", ""))
-                    except Exception:
-                        chit_name = selected.replace(".xlsx", "")
-
+                    chit_name = chit_names[choice - 1] if choice - 1 < len(chit_names) else selected.replace(".xlsx", "")
                     _bot_sessions[from_number] = {"step": "ready", "chitFile": selected, "chitName": chit_name}
-
-                    reply = (
-                        f"✅ You selected *{chit_name}*\n\n"
-                        "Now send any command:\n\n"
-                        "📊 *status* — Chit status & details\n"
-                        "💰 *balance* — Amount to pay\n"
-                        "👥 *members* — Member list\n"
-                        "📋 *details* — Full chit info\n"
-                        "🔔 *reminder* — Payment reminder message\n"
-                        "📢 *tomorrow* — Chit tomorrow message\n"
-                        "🔍 *Your name* — Your payment history\n"
-                        "🔄 *change* — Select a different chit\n"
-                        "❓ *help* — Show commands"
-                    )
-                    send_whatsapp_message(from_number, reply)
+                    _send_command_menu(from_number, f"✅ {chit_name}", f"You selected *{chit_name}*\n\nSelect an option below or type your *name* to get payment history.")
                     return
                 else:
                     send_whatsapp_message(from_number, f"⚠️ Please send a number between *1* and *{len(chit_files)}*.")
@@ -886,29 +1026,12 @@ def _handle_bot_message(from_number, text):
             except ValueError:
                 pass
 
-            # Maybe they typed the chit name instead of a number
+            # Maybe they typed the chit name
             for i, cf in enumerate(chit_files):
-                try:
-                    info = gs_get_chit_number(cf)
-                    name = info.get("chitName", cf.replace(".xlsx", ""))
-                except Exception:
-                    name = cf.replace(".xlsx", "")
+                name = chit_names[i] if i < len(chit_names) else cf.replace(".xlsx", "")
                 if text_lower in name.lower() or text_lower in cf.lower().replace(".xlsx", ""):
                     _bot_sessions[from_number] = {"step": "ready", "chitFile": cf, "chitName": name}
-                    reply = (
-                        f"✅ You selected *{name}*\n\n"
-                        "Now send any command:\n\n"
-                        "📊 *status* — Chit status & details\n"
-                        "💰 *balance* — Amount to pay\n"
-                        "👥 *members* — Member list\n"
-                        "📋 *details* — Full chit info\n"
-                        "🔔 *reminder* — Payment reminder message\n"
-                        "📢 *tomorrow* — Chit tomorrow message\n"
-                        "🔍 *Your name* — Your payment history\n"
-                        "🔄 *change* — Select a different chit\n"
-                        "❓ *help* — Show commands"
-                    )
-                    send_whatsapp_message(from_number, reply)
+                    _send_command_menu(from_number, f"✅ {name}", f"You selected *{name}*\n\nSelect an option below or type your *name* to get payment history.")
                     return
 
             send_whatsapp_message(from_number, f"⚠️ I didn't understand. Please send the *number* of the chit you want to select (1-{len(chit_files)}).")
@@ -919,151 +1042,44 @@ def _handle_bot_message(from_number, text):
             send_whatsapp_message(from_number, "👋 Hi! Send *hi* to get started and select your chit.")
             return
 
-        # ---- STEP: ready — user has selected a chit ----
+        # ---- STEP: ready — user typed free text (name search or old commands) ----
         cf = sess.get("chitFile", "")
         chit_name = sess.get("chitName", "")
 
-        # CHANGE CHIT
+        # Still support typed commands as fallback
         if text_lower in ("change", "switch", "back", "select", "chit"):
             _bot_sessions[from_number] = {}
             _handle_bot_message(from_number, "hi")
             return
 
-        # HELP
         if text_lower in ("help", "?", "commands"):
-            reply = (
-                f"📖 *Commands for {chit_name}:*\n\n"
-                "📊 *status* — Chit number, remaining, amount\n"
-                "💰 *balance* — Amount to pay + GPay\n"
-                "👥 *members* — All members list\n"
-                "📋 *details* — Full chit info\n"
-                "🔔 *reminder* — Payment reminder message\n"
-                "📢 *tomorrow* — Chit tomorrow message\n"
-                "🔍 *Your name* — Your payment history\n"
-                "🔄 *change* — Select a different chit\n"
-                "🔁 *hi* — Start over"
-            )
-            send_whatsapp_message(from_number, reply)
+            _send_command_menu(from_number, f"📖 {chit_name}", "Select an option below or type your *name* to get payment history.")
             return
 
-        # STATUS
-        if text_lower in ("status", "chit status", "state"):
-            info = gs_get_chit_number(cf)
-            reply = (
-                f"📊 *{info.get('chitName', cf)}*\n"
-                f"━━━━━━━━━━━━━━━\n"
-                f"📌 Chit Number: *{info.get('chitNumber', '-')}*\n"
-                f"💰 Total Amount: ₹{info.get('totalAmount', '-')}\n"
-                f"🔄 Remaining: *{info.get('chitRemaining', '-')}*\n"
-                f"📅 Conducted: {info.get('conducted', '-')}\n"
-                f"💳 Amount/Person: ₹{info.get('amountPerPerson', '-')}"
-            )
-            send_whatsapp_message(from_number, reply)
-            return
-
-        # BALANCE
-        if text_lower in ("balance", "amount", "pay", "payment", "pending"):
-            info = gs_get_chit_number(cf)
-            reply = (
-                f"💰 *{info.get('chitName', cf)}*\n"
-                f"━━━━━━━━━━━━━━━\n"
-                f"💳 Amount to Pay: *₹{info.get('amountPerPerson', '-')}*\n"
-                f"📱 GPay/PhonePe: *{info.get('gpay', '-')}*"
-            )
-            send_whatsapp_message(from_number, reply)
-            return
-
-        # MEMBERS
-        if text_lower in ("members", "member", "list", "all members"):
-            info = gs_get_chit_number(cf)
-            members = get_all_members(cf)
-            member_names = [m.get("name", m.get("Name", "")) if isinstance(m, dict) else str(m) for m in members]
-            reply = f"👥 *{info.get('chitName', cf)}* — Members\n━━━━━━━━━━━━━━━\n"
-            for i, name in enumerate(member_names, 1):
-                if name:
-                    reply += f"{i}. {name}\n"
-            send_whatsapp_message(from_number, reply.strip())
-            return
-
-        # DETAILS
         if text_lower in ("details", "detail", "info", "full", "all"):
-            info = gs_get_chit_number(cf)
-            reply = (
-                f"📋 *{info.get('chitName', cf)}* — Full Details\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"📌 Chit Number: *{info.get('chitNumber', '-')}*\n"
-                f"💰 Total Amount: ₹{info.get('totalAmount', '-')}\n"
-                f"🔄 Remaining: *{info.get('chitRemaining', '-')}*\n"
-                f"💳 Amount/Person: ₹{info.get('amountPerPerson', '-')}\n"
-                f"📅 Conducted: {info.get('conducted', '-')}\n"
-                f"📱 GPay: {info.get('gpay', '-')}\n"
-                f"📞 Contact: {info.get('contactNumber', '-')}\n"
-                f"⏳ Balance Chit: {info.get('balanceChit', '-')}"
-            )
-            send_whatsapp_message(from_number, reply)
+            _handle_bot_message(from_number, "cmd_details")
             return
 
-        # REMINDER — Payment reminder message
         if text_lower in ("reminder", "remind", "pay reminder", "payment reminder"):
-            info = gs_get_chit_number(cf)
-            chit_n = info.get("chitName", cf.replace(".xlsx", ""))
-            amount = info.get("amountPerPerson", "-")
-            gpay = info.get("gpay", "-")
-            reply = (
-                f"🔔 Reminder for *{chit_n}*\n\n"
-                f"Hi 👋,\n\n"
-                f"This is a friendly reminder to pay your chit amount of *₹{amount}* for this month.\n\n"
-                f"💳 Gpay/PhonePe to *{gpay}*\n\n"
-                f"Please make the payment at the earliest if not done.\n\n"
-                f"———————————\n\n"
-                f"🔔 *{chit_n}* நினைவூட்டல்\n\n"
-                f"நட்பான நினைவூட்டல்: இந்த மாதத்திற்கான உங்கள் சிட் தொகை *₹{amount}* செலுத்தவும், இன்னும் செலுத்தவில்லை என்றால்.\n\n"
-                f"💳 Gpay/PhonePe க்கு *{gpay}*\n\n"
-                f"Thank you! 🙏"
-            )
-            send_whatsapp_message(from_number, reply)
+            _handle_bot_message(from_number, "cmd_reminder")
             return
 
-        # TOMORROW — Chit tomorrow reminder message
         if text_lower in ("tomorrow", "chit tomorrow", "tmrw", "tmr"):
-            info = gs_get_chit_number(cf)
-            chit_n = info.get("chitName", cf.replace(".xlsx", ""))
-            chit_num = info.get("chitNumber", "-")
-            contact = info.get("contactNumber", "-")
-            tomorrow = date.today() + timedelta(days=1)
-            tomorrow_str = tomorrow.strftime("%d-%m-%Y")
-            reply = (
-                f"🔔 *Reminder: {chit_n} - Chit Tomorrow!*\n\n"
-                f"📅 *Date:* {tomorrow_str}\n"
-                f"📌 *Chit Number:* {chit_num}\n\n"
-                f"Dear Members,\n"
-                f"Tomorrow is the chit day for *{chit_n}*.\n"
-                f"If you want to take the chit, please come and participate.\n\n"
-                f"📞 *Contact:* {contact} (Call to confirm your interest)\n\n"
-                f"———————————\n\n"
-                f"🔔 *நினைவூட்டல்: {chit_n} - நாளை சிட்!*\n\n"
-                f"📅 *தேதி:* {tomorrow_str}\n"
-                f"📌 *சிட் எண்:* {chit_num}\n\n"
-                f"நாளை *{chit_n}* சிட் நடக்கிறது.\n"
-                f"நீங்கள் சிட் எடுக்க விரும்பினால், தயவுசெய்து வருகை தாருங்கள்.\n\n"
-                f"📞 *தொடர்பு எண்:* {contact} (உங்கள் ஆர்வத்தை உறுதிப்படுத்த இந்த எண்ணை அழைக்கவும்)\n\n"
-                f"நன்றி! 🙏"
-            )
-            send_whatsapp_message(from_number, reply)
+            _handle_bot_message(from_number, "cmd_tomorrow")
             return
 
         # ---- NAME SEARCH (payment history) in the selected chit ----
         result = _search_member_in_chit(text, cf)
         if result:
             send_whatsapp_message(from_number, result)
+            _send_command_menu(from_number, f"👤 {chit_name}", "What would you like to do next?")
         else:
             reply = (
                 f"🔍 No member found with name *{text}* in *{chit_name}*.\n\n"
-                "Please type your name exactly as it appears in the chit.\n"
-                "Send *members* to see the full member list.\n"
-                "Send *help* to see all commands."
+                "Please type your name exactly as it appears in the chit."
             )
             send_whatsapp_message(from_number, reply)
+            _send_command_menu(from_number, f"🔍 {chit_name}", "Try again or select an option:")
 
     except Exception as e:
         print(f"[Bot] Error: {e}")
