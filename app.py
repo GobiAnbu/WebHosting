@@ -182,6 +182,7 @@ def _send_command_menu(phone, header_text, body_text):
                 "rows": [
                     {"id": "cmd_details", "title": "📋 Chit Details"},
                     {"id": "cmd_month_status", "title": "📅 Current Month Status"},
+                    {"id": "cmd_update", "title": "📊 Update Chit Details"},
                     {"id": "cmd_reminder", "title": "🔔 Payment Reminder"},
                     {"id": "cmd_tomorrow", "title": "📢 Chit Tomorrow"},
                     {"id": "cmd_change", "title": "🔄 Change Chit"},
@@ -947,40 +948,81 @@ def _handle_bot_message(from_number, text):
                     info = gs_get_chit_number(cf)
                     chit_n = info.get("chitName", cf.replace(".xlsx", ""))
 
-                    # Find current month row
                     now = date.today()
                     current_row = None
-                    for row in chit_rows:
-                        chit_month = str(row.get("Chit Month", "")).strip()
-                        if chit_month:
-                            try:
-                                from datetime import datetime
-                                dt = datetime.strptime(chit_month, "%d-%m-%Y")
-                                if dt.month == now.month and dt.year == now.year:
-                                    current_row = row
+                    from datetime import datetime
+
+                    date_formats = ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%m-%d-%Y", "%d-%m-%y", "%b-%Y", "%B-%Y", "%b %Y", "%B %Y", "%m/%d/%Y"]
+
+                    # Log headers for debugging
+                    if chit_rows:
+                        print(f"[Bot] chitNumberRows headers: {list(chit_rows[0].keys())}")
+                        print(f"[Bot] First row sample: {chit_rows[0]}")
+
+                    # Try to find the date column dynamically
+                    date_col = None
+                    date_col_candidates = ["Chit Month", "chit month", "ChitMonth", "Month", "month", "Date", "date"]
+                    if chit_rows:
+                        row_keys = list(chit_rows[0].keys())
+                        for candidate in date_col_candidates:
+                            for key in row_keys:
+                                if candidate.lower() == key.lower():
+                                    date_col = key
                                     break
-                            except Exception:
-                                pass
+                            if date_col:
+                                break
+                        # If no named match, try to find a column with date-like values
+                        if not date_col:
+                            for key in row_keys:
+                                val = str(chit_rows[0].get(key, "")).strip()
+                                for fmt in date_formats:
+                                    try:
+                                        datetime.strptime(val, fmt)
+                                        date_col = key
+                                        break
+                                    except (ValueError, Exception):
+                                        continue
+                                if date_col:
+                                    break
+
+                    print(f"[Bot] Using date column: '{date_col}'")
+
+                    if date_col:
+                        for row in chit_rows:
+                            chit_month = str(row.get(date_col, "")).strip()
+                            if not chit_month:
+                                continue
+                            for fmt in date_formats:
+                                try:
+                                    dt = datetime.strptime(chit_month, fmt)
+                                    if dt.month == now.month and dt.year == now.year:
+                                        current_row = row
+                                        break
+                                except (ValueError, Exception):
+                                    continue
+                            if current_row:
+                                break
 
                     if current_row:
-                        reply = (
-                            f"📅 *{chit_n}* — Current Month Status\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n"
-                            f"📅 Chit Month: *{current_row.get('Chit Month', '-')}*\n"
-                            f"📌 Chit Number: *{current_row.get('Chit Number', '-')}*\n"
-                            f"✅ Conducted: *{current_row.get('Conducted', '-')}*\n"
-                            f"🎯 Taken By: *{current_row.get('Taken By', '-')}*\n"
-                            f"💰 Chit Amount: ₹{current_row.get('Chit Amount', '-')}\n"
-                            f"💳 Amount Per Person: ₹{current_row.get('Amount Per Person', '-')}"
-                        )
+                        # Build reply from all columns dynamically
+                        reply = f"📅 *{chit_n}* — Current Month Status\n━━━━━━━━━━━━━━━━━━━━\n"
+                        icons = {"Chit Month": "📅", "Chit Number": "📌", "Conducted": "✅", "Taken By": "🎯", "Chit Amount": "💰", "Amount Per Person": "💳"}
+                        for key, val in current_row.items():
+                            icon = icons.get(key, "▪️")
+                            reply += f"{icon} {key}: *{val}*\n"
                     else:
-                        reply = f"📅 *{chit_n}* — No data found for the current month."
+                        available = []
+                        if date_col:
+                            available = [str(r.get(date_col, "")) for r in chit_rows[:5]]
+                        print(f"[Bot] No match for {now.month}/{now.year}. Available: {available}")
+                        reply = f"📅 *{chit_n}* — No data found for the current month ({now.strftime('%B %Y')})."
 
                     send_whatsapp_message(from_number, reply)
                 except Exception as e:
                     print(f"[Bot] Month status error: {e}")
+                    import traceback
+                    traceback.print_exc()
                     send_whatsapp_message(from_number, "⚠️ Could not fetch current month status. Try again later.")
-                    _send_command_menu(from_number, chit_name, "What would you like to do next?")
                 return
 
             if text_lower == "cmd_reminder":
@@ -1037,6 +1079,150 @@ def _handle_bot_message(from_number, text):
                 _handle_bot_message(from_number, "hi")
                 return
 
+            if text_lower == "cmd_update":
+                info = gs_get_chit_number(cf)
+                conducted = str(info.get("conducted", "")).strip().lower()
+                if conducted == "yes":
+                    send_whatsapp_message(from_number, "🚫 Chit already closed for this month! Cannot update.")
+                    return
+                # Get member list and show as interactive list
+                members = get_members(cf)
+                if not members:
+                    send_whatsapp_message(from_number, "⚠️ No members found in this chit.")
+                    return
+                rows = []
+                for i, m in enumerate(members):
+                    name = m.get("name", "") if isinstance(m, dict) else str(m)
+                    if name and len(rows) < 10:  # WhatsApp max 10 rows
+                        rows.append({"id": f"upd_name_{i}", "title": name[:24]})
+                if rows:
+                    _bot_sessions[from_number] = {
+                        "step": "update_select_name",
+                        "chitFile": cf,
+                        "chitName": chit_name,
+                        "members": members
+                    }
+                    send_whatsapp_interactive(from_number, {
+                        "type": "list",
+                        "header": {"type": "text", "text": "📊 Update Chit Details"},
+                        "body": {"text": "Select who took the chit this month:"},
+                        "action": {
+                            "button": "Select Name",
+                            "sections": [{"title": "Members", "rows": rows}]
+                        }
+                    })
+                else:
+                    send_whatsapp_message(from_number, "⚠️ No members available.")
+                return
+
+            return
+
+        # ---- STEP: Update flow - name selected, ask for chit amount ----
+        if sess.get("step") == "update_select_name":
+            cf = sess.get("chitFile", "")
+            chit_name = sess.get("chitName", "")
+            members = sess.get("members", [])
+
+            selected_name = ""
+            if text_lower.startswith("upd_name_"):
+                try:
+                    idx = int(text_lower.replace("upd_name_", ""))
+                    m = members[idx]
+                    selected_name = m.get("name", "") if isinstance(m, dict) else str(m)
+                except (ValueError, IndexError):
+                    pass
+            else:
+                # Typed the name directly
+                for m in members:
+                    name = m.get("name", "") if isinstance(m, dict) else str(m)
+                    if text_lower in name.lower():
+                        selected_name = name
+                        break
+
+            if selected_name:
+                _bot_sessions[from_number] = {
+                    "step": "update_enter_amount",
+                    "chitFile": cf,
+                    "chitName": chit_name,
+                    "selectedName": selected_name
+                }
+                send_whatsapp_message(from_number, f"✅ Selected: *{selected_name}*\n\nNow enter the *Chit Amount*:")
+            else:
+                send_whatsapp_message(from_number, "⚠️ Could not find that member. Please select from the list or type the name.")
+            return
+
+        # ---- STEP: Update flow - chit amount entered, confirm & send ----
+        if sess.get("step") == "update_enter_amount":
+            cf = sess.get("chitFile", "")
+            chit_name = sess.get("chitName", "")
+            selected_name = sess.get("selectedName", "")
+
+            try:
+                chit_amount = float(text.replace(",", "").strip())
+            except ValueError:
+                send_whatsapp_message(from_number, "⚠️ Please enter a valid number for the chit amount.")
+                return
+
+            info = gs_get_chit_number(cf)
+            total_amount = info.get("totalAmount", 0)
+            chit_number = info.get("chitNumber", "-")
+            chit_remaining = info.get("chitRemaining", "-")
+            gpay = info.get("gpay", "-")
+            chit_n = info.get("chitName", chit_name)
+
+            amount_need_to_pay = math.ceil((chit_amount / 20) / 10) * 10
+            discount_amount = float(total_amount) - chit_amount if total_amount else 0
+
+            today_str = date.today().strftime("%d-%m-%Y")
+
+            # Send the update to backend
+            update_data = {
+                "chitFile": cf,
+                "name": selected_name,
+                "chitAmount": str(chit_amount),
+                "discountAmount": str(discount_amount),
+                "totalAmount": str(total_amount),
+                "chitNumber": str(chit_number),
+                "currentDate": date.today().strftime("%Y-%m-%d"),
+                "chitRemaining": str(chit_remaining)
+            }
+
+            try:
+                update_campaign(cf, selected_name, str(chit_amount), str(discount_amount), amount_need_to_pay)
+            except Exception as e:
+                print(f"[Bot] Update campaign error: {e}")
+
+            msg = (
+                f"Status of the Chit {chit_n}:\n\n"
+                f"🎯 *Chit Taken By:* {selected_name}\n"
+                f"📌 *Chit Number:* {chit_number}\n"
+                f"💰 *Total Amount:* ₹{total_amount}\n"
+                f"🏷️ *Chit Amount:* ₹{chit_amount}\n"
+                f"📅 *Date:* {today_str}\n"
+                f"🔄 *Chit Remaining:* {chit_remaining}\n\n"
+                f"💳 *Amount Need to Pay:* *₹{amount_need_to_pay}*\n\n"
+                f"———————————\n\n"
+                f"{chit_n} சிட் நிலை:\n\n"
+                f"🎯 *சிட் எடுத்தவர்:* {selected_name}\n"
+                f"📌 *சிட் எண்:* {chit_number}\n"
+                f"💰 *மொத்த தொகை:* ₹{total_amount}\n"
+                f"🏷️ *சிட் தொகை:* ₹{chit_amount}\n"
+                f"📅 *தேதி:* {today_str}\n"
+                f"🔄 *மீதமுள்ள சிட்:* {chit_remaining}\n\n"
+                f"💳 *செலுத்த வேண்டிய தொகை:* *₹{amount_need_to_pay}*\n\n"
+                f"நன்றி! 🎉"
+            )
+
+            # Send to the contact number
+            contact_phone = str(info.get("contactNumber", "")).strip()
+            if contact_phone:
+                send_whatsapp_message(contact_phone, msg)
+
+            # Also send confirmation to the user
+            send_whatsapp_message(from_number, f"✅ *Chit Details Updated & Sent!*\n\n{msg}")
+
+            # Reset to ready state
+            _bot_sessions[from_number] = {"step": "ready", "chitFile": cf, "chitName": chit_name}
             return
 
         # ---- STEP: Waiting for chit selection (typed number fallback) ----
@@ -1092,6 +1278,10 @@ def _handle_bot_message(from_number, text):
 
         if text_lower in ("status", "month", "month status", "current month", "current"):
             _handle_bot_message(from_number, "cmd_month_status")
+            return
+
+        if text_lower in ("update", "update details", "update chit", "campaign"):
+            _handle_bot_message(from_number, "cmd_update")
             return
 
         if text_lower in ("reminder", "remind", "pay reminder", "payment reminder"):
