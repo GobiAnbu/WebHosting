@@ -21,7 +21,7 @@ from google_sheets_api import (
 
 import threading
 
-from datetime import timedelta
+from datetime import timedelta, date
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chit-fund-secret-key-2026")
@@ -659,16 +659,70 @@ def update_user():
 
 WEBHOOK_VERIFY_TOKEN = os.environ.get("WEBHOOK_VERIFY_TOKEN", "chitfund_bot_verify_2026")
 
+# In-memory conversation state per phone number
+# { "919876543210": { "step": "select_chit" | "ready", "chitFile": "xxx.xlsx", "chitFiles": [...] } }
+_bot_sessions = {}
+
+def _get_all_chit_files_list():
+    """Get all chit files across all folders."""
+    all_files = []
+    try:
+        folders = gs_get_chit_folders()
+        for folder in folders:
+            files = gs_get_chit_files(folder)
+            all_files.extend(files)
+    except Exception:
+        pass
+    return all_files
+
+@app.route("/webhook", methods=["GET"])
+def webhook_verify():
+    """Meta webhook verification."""
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+    print(f"[Webhook] Verify: mode={mode}")
+    if mode == "subscribe" and token == WEBHOOK_VERIFY_TOKEN:
+        print("[Webhook] ✅ Verified")
+        return challenge, 200
+    return "Forbidden", 403
+
+@app.route("/webhook", methods=["POST"])
+def webhook_receive():
+    """Receive incoming WhatsApp messages."""
+    body = request.get_json(silent=True)
+    if not body:
+        return "OK", 200
+    try:
+        for entry in body.get("entry", []):
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                if "statuses" in value:
+                    continue
+                for msg in value.get("messages", []):
+                    if msg.get("type") != "text":
+                        continue
+                    from_number = msg.get("from", "")
+                    text = msg.get("text", {}).get("body", "").strip()
+                    if from_number and text:
+                        print(f"[Bot] 📩 {from_number}: {text}")
+                        threading.Thread(target=_handle_bot_message, args=(from_number, text), daemon=True).start()
+    except Exception as e:
+        print(f"[Bot] Error: {e}")
+    return "OK", 200
+
+@app.route("/webhook-test")
+def webhook_test():
+    return jsonify({"status": "ok", "message": "Webhook is reachable!", "verify_token": WEBHOOK_VERIFY_TOKEN})
+
 @app.route("/get-webhook-token")
 @admin_required
 def get_webhook_token():
-    """Return the current webhook verify token."""
     return jsonify({"token": WEBHOOK_VERIFY_TOKEN})
 
 @app.route("/save-webhook-token", methods=["POST"])
 @admin_required
 def save_webhook_token():
-    """Update the webhook verify token."""
     global WEBHOOK_VERIFY_TOKEN
     data = request.get_json()
     token = data.get("token", "").strip()
@@ -676,7 +730,6 @@ def save_webhook_token():
         return jsonify({"success": False, "error": "Token cannot be empty"})
     WEBHOOK_VERIFY_TOKEN = token
     os.environ["WEBHOOK_VERIFY_TOKEN"] = token
-    # Persist to .env
     try:
         env_vars = {}
         if os.path.exists(".env"):
@@ -694,287 +747,316 @@ def save_webhook_token():
         pass
     return jsonify({"success": True})
 
-@app.route("/webhook", methods=["GET"])
-def webhook_verify():
-    """Meta webhook verification — called once when you register the webhook URL."""
-    mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
-    if mode == "subscribe" and token == WEBHOOK_VERIFY_TOKEN:
-        return challenge, 200
-    return "Forbidden", 403
-
-@app.route("/webhook", methods=["POST"])
-def webhook_receive():
-    """Receive incoming WhatsApp messages and reply automatically."""
-    body = request.get_json(silent=True)
-    if not body:
-        return "OK", 200
-
-    try:
-        for entry in body.get("entry", []):
-            for change in entry.get("changes", []):
-                value = change.get("value", {})
-                messages = value.get("messages", [])
-                for msg in messages:
-                    if msg.get("type") != "text":
-                        continue
-                    from_number = msg.get("from", "")
-                    text = msg.get("text", {}).get("body", "").strip()
-                    if from_number and text:
-                        # Process in background so webhook returns fast
-                        threading.Thread(
-                            target=_handle_bot_message,
-                            args=(from_number, text),
-                            daemon=True
-                        ).start()
-    except Exception:
-        pass
-
-    return "OK", 200
+# ==================== BOT CONVERSATION LOGIC ====================
 
 def _handle_bot_message(from_number, text):
-    """Process an incoming WhatsApp message and send a reply."""
+    """Conversational bot: hi → pick chit → then answer questions."""
     try:
-        # Normalize: strip country code for matching
-        clean_number = from_number.lstrip("+").lstrip("0")
-        if clean_number.startswith("91"):
-            clean_number = clean_number[2:]
-
         text_lower = text.lower().strip()
+        sess = _bot_sessions.get(from_number, {})
 
-        # ---- GREETING ----
-        if text_lower in ("hi", "hello", "hey", "hii", "hai", "start"):
-            reply = (
-                "👋 *Welcome to Chit Fund Bot!*\n\n"
-                "Send any of these commands:\n\n"
-                "📊 *status* — Get your chit status\n"
-                "💰 *balance* — Check pending amount\n"
-                "👥 *members* — List all members\n"
-                "📋 *details* — Full chit info\n"
-                "❓ *help* — Show this menu\n\n"
-                "Or just type your *name* to get your payment details."
-            )
-            send_whatsapp_message(from_number, reply)
+        # ---- RESET: hi / hello / start → show chit list ----
+        if text_lower in ("hi", "hello", "hey", "hii", "hai", "start", "reset", "menu"):
+            chit_files = _get_all_chit_files_list()
+            if not chit_files:
+                send_whatsapp_message(from_number, "⚠️ No chit files found. Please contact the administrator.")
+                return
+
+            # Build numbered chit list
+            lines = ["👋 *Welcome to Chit Fund Bot!*\n"]
+            lines.append("Please select your chit by sending the *number*:\n")
+            for i, cf in enumerate(chit_files, 1):
+                # Try to get chit name
+                try:
+                    info = gs_get_chit_number(cf)
+                    name = info.get("chitName", cf.replace(".xlsx", ""))
+                except Exception:
+                    name = cf.replace(".xlsx", "")
+                lines.append(f"*{i}.* {name}")
+
+            lines.append("\n_Example: Send *1* to select the first chit_")
+
+            _bot_sessions[from_number] = {"step": "select_chit", "chitFiles": chit_files}
+            send_whatsapp_message(from_number, "\n".join(lines))
             return
 
-        # ---- HELP ----
-        if text_lower in ("help", "menu", "?", "commands"):
+        # ---- STEP: Waiting for chit selection ----
+        if sess.get("step") == "select_chit":
+            chit_files = sess.get("chitFiles", [])
+
+            # Check if user sent a number
+            try:
+                choice = int(text_lower)
+                if 1 <= choice <= len(chit_files):
+                    selected = chit_files[choice - 1]
+                    try:
+                        info = gs_get_chit_number(selected)
+                        chit_name = info.get("chitName", selected.replace(".xlsx", ""))
+                    except Exception:
+                        chit_name = selected.replace(".xlsx", "")
+
+                    _bot_sessions[from_number] = {"step": "ready", "chitFile": selected, "chitName": chit_name}
+
+                    reply = (
+                        f"✅ You selected *{chit_name}*\n\n"
+                        "Now send any command:\n\n"
+                        "📊 *status* — Chit status & details\n"
+                        "💰 *balance* — Amount to pay\n"
+                        "👥 *members* — Member list\n"
+                        "📋 *details* — Full chit info\n"
+                        "🔔 *reminder* — Payment reminder message\n"
+                        "📢 *tomorrow* — Chit tomorrow message\n"
+                        "🔍 *Your name* — Your payment history\n"
+                        "🔄 *change* — Select a different chit\n"
+                        "❓ *help* — Show commands"
+                    )
+                    send_whatsapp_message(from_number, reply)
+                    return
+                else:
+                    send_whatsapp_message(from_number, f"⚠️ Please send a number between *1* and *{len(chit_files)}*.")
+                    return
+            except ValueError:
+                pass
+
+            # Maybe they typed the chit name instead of a number
+            for i, cf in enumerate(chit_files):
+                try:
+                    info = gs_get_chit_number(cf)
+                    name = info.get("chitName", cf.replace(".xlsx", ""))
+                except Exception:
+                    name = cf.replace(".xlsx", "")
+                if text_lower in name.lower() or text_lower in cf.lower().replace(".xlsx", ""):
+                    _bot_sessions[from_number] = {"step": "ready", "chitFile": cf, "chitName": name}
+                    reply = (
+                        f"✅ You selected *{name}*\n\n"
+                        "Now send any command:\n\n"
+                        "📊 *status* — Chit status & details\n"
+                        "💰 *balance* — Amount to pay\n"
+                        "👥 *members* — Member list\n"
+                        "📋 *details* — Full chit info\n"
+                        "🔔 *reminder* — Payment reminder message\n"
+                        "📢 *tomorrow* — Chit tomorrow message\n"
+                        "🔍 *Your name* — Your payment history\n"
+                        "🔄 *change* — Select a different chit\n"
+                        "❓ *help* — Show commands"
+                    )
+                    send_whatsapp_message(from_number, reply)
+                    return
+
+            send_whatsapp_message(from_number, f"⚠️ I didn't understand. Please send the *number* of the chit you want to select (1-{len(chit_files)}).")
+            return
+
+        # ---- No session yet → ask to say hi ----
+        if sess.get("step") != "ready":
+            send_whatsapp_message(from_number, "👋 Hi! Send *hi* to get started and select your chit.")
+            return
+
+        # ---- STEP: ready — user has selected a chit ----
+        cf = sess.get("chitFile", "")
+        chit_name = sess.get("chitName", "")
+
+        # CHANGE CHIT
+        if text_lower in ("change", "switch", "back", "select", "chit"):
+            _bot_sessions[from_number] = {}
+            _handle_bot_message(from_number, "hi")
+            return
+
+        # HELP
+        if text_lower in ("help", "?", "commands"):
             reply = (
-                "📖 *Chit Fund Bot — Commands*\n\n"
+                f"📖 *Commands for {chit_name}:*\n\n"
                 "📊 *status* — Chit number, remaining, amount\n"
-                "💰 *balance* — Amount to pay this month\n"
-                "👥 *members* — List active members\n"
-                "📋 *details* — Full chit details\n"
-                "🔍 *<your name>* — Your payment history\n\n"
-                "Example: Send your name like *Ravi* or *Kumar* to see your payment status."
+                "💰 *balance* — Amount to pay + GPay\n"
+                "👥 *members* — All members list\n"
+                "📋 *details* — Full chit info\n"
+                "🔔 *reminder* — Payment reminder message\n"
+                "📢 *tomorrow* — Chit tomorrow message\n"
+                "🔍 *Your name* — Your payment history\n"
+                "🔄 *change* — Select a different chit\n"
+                "🔁 *hi* — Start over"
             )
             send_whatsapp_message(from_number, reply)
             return
 
-        # ---- Find which chit files have this contact number ----
-        chit_files = _find_chit_files_for_number(clean_number)
-
-        if not chit_files:
-            # No chit linked — try to search by name across all chits
-            result = _search_member_by_name(text)
-            if result:
-                send_whatsapp_message(from_number, result)
-            else:
-                reply = (
-                    "🔍 Sorry, I couldn't find your details.\n\n"
-                    "Your phone number is not linked to any chit, "
-                    "and no member found with that name.\n\n"
-                    "Please contact the chit administrator.\n"
-                    "Send *help* to see available commands."
-                )
-                send_whatsapp_message(from_number, reply)
-            return
-
-        # ---- STATUS ----
+        # STATUS
         if text_lower in ("status", "chit status", "state"):
-            reply = ""
-            for cf in chit_files:
-                info = gs_get_chit_number(cf)
-                reply += (
-                    f"📊 *{info.get('chitName', cf)}*\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"📌 Chit Number: *{info.get('chitNumber', '-')}*\n"
-                    f"💰 Total Amount: ₹{info.get('totalAmount', '-')}\n"
-                    f"🔄 Remaining: *{info.get('chitRemaining', '-')}*\n"
-                    f"📅 Conducted: {info.get('conducted', '-')}\n"
-                    f"💳 Amount/Person: ₹{info.get('amountPerPerson', '-')}\n\n"
-                )
-            send_whatsapp_message(from_number, reply.strip())
+            info = gs_get_chit_number(cf)
+            reply = (
+                f"📊 *{info.get('chitName', cf)}*\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"📌 Chit Number: *{info.get('chitNumber', '-')}*\n"
+                f"💰 Total Amount: ₹{info.get('totalAmount', '-')}\n"
+                f"🔄 Remaining: *{info.get('chitRemaining', '-')}*\n"
+                f"📅 Conducted: {info.get('conducted', '-')}\n"
+                f"💳 Amount/Person: ₹{info.get('amountPerPerson', '-')}"
+            )
+            send_whatsapp_message(from_number, reply)
             return
 
-        # ---- BALANCE ----
+        # BALANCE
         if text_lower in ("balance", "amount", "pay", "payment", "pending"):
-            reply = ""
-            for cf in chit_files:
-                info = gs_get_chit_number(cf)
-                reply += (
-                    f"💰 *{info.get('chitName', cf)}*\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"💳 Amount to Pay: *₹{info.get('amountPerPerson', '-')}*\n"
-                    f"📱 GPay/PhonePe: *{info.get('gpay', '-')}*\n\n"
-                )
-            send_whatsapp_message(from_number, reply.strip())
+            info = gs_get_chit_number(cf)
+            reply = (
+                f"💰 *{info.get('chitName', cf)}*\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"💳 Amount to Pay: *₹{info.get('amountPerPerson', '-')}*\n"
+                f"📱 GPay/PhonePe: *{info.get('gpay', '-')}*"
+            )
+            send_whatsapp_message(from_number, reply)
             return
 
-        # ---- MEMBERS ----
+        # MEMBERS
         if text_lower in ("members", "member", "list", "all members"):
-            reply = ""
-            for cf in chit_files:
-                info = gs_get_chit_number(cf)
-                members = get_all_members(cf)
-                member_names = [m.get("name", m.get("Name", "")) if isinstance(m, dict) else str(m) for m in members]
-                reply += (
-                    f"👥 *{info.get('chitName', cf)}* — Members\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                )
-                for i, name in enumerate(member_names, 1):
-                    if name:
-                        reply += f"{i}. {name}\n"
-                reply += "\n"
+            info = gs_get_chit_number(cf)
+            members = get_all_members(cf)
+            member_names = [m.get("name", m.get("Name", "")) if isinstance(m, dict) else str(m) for m in members]
+            reply = f"👥 *{info.get('chitName', cf)}* — Members\n━━━━━━━━━━━━━━━\n"
+            for i, name in enumerate(member_names, 1):
+                if name:
+                    reply += f"{i}. {name}\n"
             send_whatsapp_message(from_number, reply.strip())
             return
 
-        # ---- DETAILS ----
+        # DETAILS
         if text_lower in ("details", "detail", "info", "full", "all"):
-            reply = ""
-            for cf in chit_files:
-                info = gs_get_chit_number(cf)
-                reply += (
-                    f"📋 *{info.get('chitName', cf)}* — Full Details\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📌 Chit Number: *{info.get('chitNumber', '-')}*\n"
-                    f"💰 Total Amount: ₹{info.get('totalAmount', '-')}\n"
-                    f"🔄 Remaining: *{info.get('chitRemaining', '-')}*\n"
-                    f"💳 Amount/Person: ₹{info.get('amountPerPerson', '-')}\n"
-                    f"📅 Conducted: {info.get('conducted', '-')}\n"
-                    f"📱 GPay: {info.get('gpay', '-')}\n"
-                    f"📞 Contact: {info.get('contactNumber', '-')}\n"
-                    f"⏳ Balance Chit: {info.get('balanceChit', '-')}\n\n"
-                )
-            send_whatsapp_message(from_number, reply.strip())
+            info = gs_get_chit_number(cf)
+            reply = (
+                f"📋 *{info.get('chitName', cf)}* — Full Details\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"📌 Chit Number: *{info.get('chitNumber', '-')}*\n"
+                f"💰 Total Amount: ₹{info.get('totalAmount', '-')}\n"
+                f"🔄 Remaining: *{info.get('chitRemaining', '-')}*\n"
+                f"💳 Amount/Person: ₹{info.get('amountPerPerson', '-')}\n"
+                f"📅 Conducted: {info.get('conducted', '-')}\n"
+                f"📱 GPay: {info.get('gpay', '-')}\n"
+                f"📞 Contact: {info.get('contactNumber', '-')}\n"
+                f"⏳ Balance Chit: {info.get('balanceChit', '-')}"
+            )
+            send_whatsapp_message(from_number, reply)
             return
 
-        # ---- NAME SEARCH (payment history) ----
-        result = _search_member_in_chits(text, chit_files)
+        # REMINDER — Payment reminder message
+        if text_lower in ("reminder", "remind", "pay reminder", "payment reminder"):
+            info = gs_get_chit_number(cf)
+            chit_n = info.get("chitName", cf.replace(".xlsx", ""))
+            amount = info.get("amountPerPerson", "-")
+            gpay = info.get("gpay", "-")
+            reply = (
+                f"🔔 Reminder for *{chit_n}*\n\n"
+                f"Hi 👋,\n\n"
+                f"This is a friendly reminder to pay your chit amount of *₹{amount}* for this month.\n\n"
+                f"💳 Gpay/PhonePe to *{gpay}*\n\n"
+                f"Please make the payment at the earliest if not done.\n\n"
+                f"———————————\n\n"
+                f"🔔 *{chit_n}* நினைவூட்டல்\n\n"
+                f"நட்பான நினைவூட்டல்: இந்த மாதத்திற்கான உங்கள் சிட் தொகை *₹{amount}* செலுத்தவும், இன்னும் செலுத்தவில்லை என்றால்.\n\n"
+                f"💳 Gpay/PhonePe க்கு *{gpay}*\n\n"
+                f"Thank you! 🙏"
+            )
+            send_whatsapp_message(from_number, reply)
+            return
+
+        # TOMORROW — Chit tomorrow reminder message
+        if text_lower in ("tomorrow", "chit tomorrow", "tmrw", "tmr"):
+            info = gs_get_chit_number(cf)
+            chit_n = info.get("chitName", cf.replace(".xlsx", ""))
+            chit_num = info.get("chitNumber", "-")
+            contact = info.get("contactNumber", "-")
+            tomorrow = date.today() + timedelta(days=1)
+            tomorrow_str = tomorrow.strftime("%d-%m-%Y")
+            reply = (
+                f"🔔 *Reminder: {chit_n} - Chit Tomorrow!*\n\n"
+                f"📅 *Date:* {tomorrow_str}\n"
+                f"📌 *Chit Number:* {chit_num}\n\n"
+                f"Dear Members,\n"
+                f"Tomorrow is the chit day for *{chit_n}*.\n"
+                f"If you want to take the chit, please come and participate.\n\n"
+                f"📞 *Contact:* {contact} (Call to confirm your interest)\n\n"
+                f"———————————\n\n"
+                f"🔔 *நினைவூட்டல்: {chit_n} - நாளை சிட்!*\n\n"
+                f"📅 *தேதி:* {tomorrow_str}\n"
+                f"📌 *சிட் எண்:* {chit_num}\n\n"
+                f"நாளை *{chit_n}* சிட் நடக்கிறது.\n"
+                f"நீங்கள் சிட் எடுக்க விரும்பினால், தயவுசெய்து வருகை தாருங்கள்.\n\n"
+                f"📞 *தொடர்பு எண்:* {contact} (உங்கள் ஆர்வத்தை உறுதிப்படுத்த இந்த எண்ணை அழைக்கவும்)\n\n"
+                f"நன்றி! 🙏"
+            )
+            send_whatsapp_message(from_number, reply)
+            return
+
+        # ---- NAME SEARCH (payment history) in the selected chit ----
+        result = _search_member_in_chit(text, cf)
         if result:
             send_whatsapp_message(from_number, result)
         else:
-            # Try global search
-            result = _search_member_by_name(text)
-            if result:
-                send_whatsapp_message(from_number, result)
-            else:
-                reply = (
-                    f"🔍 No member found with name *{text}*.\n\n"
-                    "Send *help* to see available commands,\n"
-                    "or type your exact name as it appears in the chit."
-                )
-                send_whatsapp_message(from_number, reply)
+            reply = (
+                f"🔍 No member found with name *{text}* in *{chit_name}*.\n\n"
+                "Please type your name exactly as it appears in the chit.\n"
+                "Send *members* to see the full member list.\n"
+                "Send *help* to see all commands."
+            )
+            send_whatsapp_message(from_number, reply)
 
     except Exception as e:
+        print(f"[Bot] Error: {e}")
         try:
-            send_whatsapp_message(from_number, f"⚠️ Sorry, something went wrong. Please try again later.\n\nError: {str(e)[:100]}")
+            send_whatsapp_message(from_number, "⚠️ Something went wrong. Send *hi* to start again.")
         except Exception:
             pass
 
-def _find_chit_files_for_number(phone):
-    """Find all chit files where the contact number matches."""
-    matched = []
-    try:
-        folders = gs_get_chit_folders()
-        for folder in folders:
-            files = gs_get_chit_files(folder)
-            for f in files:
-                try:
-                    info = gs_get_chit_number(f)
-                    contact = str(info.get("contactNumber", "")).strip().replace(" ", "")
-                    # Normalize contact
-                    clean_contact = contact.lstrip("+").lstrip("0")
-                    if clean_contact.startswith("91"):
-                        clean_contact = clean_contact[2:]
-                    if clean_contact and clean_contact == phone:
-                        matched.append(f)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-    return matched
-
-def _search_member_in_chits(name, chit_files):
-    """Search for a member by name in specific chit files and return payment info."""
+def _search_member_in_chit(name, chit_file):
+    """Search for a member by name in a specific chit file and return payment info."""
     name_lower = name.lower().strip()
-    results = []
+    try:
+        view_data = gs_get_chit_view_data(chit_file)
+        members_data = view_data.get("members", [])
+        if not members_data:
+            return None
 
-    for cf in chit_files:
-        try:
-            view_data = gs_get_chit_view_data(cf)
-            members_data = view_data.get("members", [])
-            if not members_data:
+        for member in members_data:
+            if not isinstance(member, dict):
+                continue
+            member_name = member.get("name", member.get("Name", member.get("NAME", "")))
+            if not member_name:
+                member_name = str(list(member.values())[0]) if member.values() else ""
+
+            if not member_name or name_lower not in member_name.lower():
                 continue
 
-            headers = list(members_data[0].keys()) if members_data and isinstance(members_data[0], dict) else []
+            info = gs_get_chit_number(chit_file)
+            result = f"👤 *{member_name}* — {info.get('chitName', chit_file)}\n━━━━━━━━━━━━━━━\n"
 
-            for member in members_data:
-                if isinstance(member, dict):
-                    member_name = member.get("name", member.get("Name", member.get("NAME", "")))
-                    if not member_name:
-                        # Try first key
-                        member_name = str(list(member.values())[0]) if member.values() else ""
+            paid_count = 0
+            unpaid_count = 0
+            unpaid_months = []
+            for key, val in member.items():
+                key_lower = key.lower()
+                if key_lower in ("name", "phone", "number", "sl", "sl.no", "s.no", "sno", "contact"):
+                    continue
+                status = str(val).strip().lower()
+                if status == "paid":
+                    paid_count += 1
+                elif status and status != "":
+                    unpaid_count += 1
+                    unpaid_months.append(key)
 
-                    if member_name and name_lower in member_name.lower():
-                        info = gs_get_chit_number(cf)
-                        result = f"👤 *{member_name}* — {info.get('chitName', cf)}\n━━━━━━━━━━━━━━━\n"
+            result += f"✅ Paid: *{paid_count}* months\n"
+            if unpaid_count > 0:
+                result += f"❌ Unpaid: *{unpaid_count}* months\n"
+                result += f"📅 Pending: {', '.join(unpaid_months[:6])}"
+                if len(unpaid_months) > 6:
+                    result += f" +{len(unpaid_months)-6} more"
+                result += "\n"
+            else:
+                result += "🎉 All months paid!\n"
 
-                        # Show payment status for each month
-                        paid_count = 0
-                        unpaid_count = 0
-                        unpaid_months = []
-                        for key, val in member.items():
-                            key_lower = key.lower()
-                            if key_lower in ("name", "phone", "number", "sl", "sl.no", "s.no", "sno", "contact"):
-                                continue
-                            status = str(val).strip().lower()
-                            if status == "paid":
-                                paid_count += 1
-                            elif status and status != "":
-                                unpaid_count += 1
-                                unpaid_months.append(key)
+            result += f"\n💳 Amount/Month: ₹{info.get('amountPerPerson', '-')}\n"
+            result += f"📱 GPay: {info.get('gpay', '-')}"
+            return result
 
-                        result += f"✅ Paid: *{paid_count}* months\n"
-                        if unpaid_count > 0:
-                            result += f"❌ Unpaid: *{unpaid_count}* months\n"
-                            result += f"📅 Pending: {', '.join(unpaid_months[:6])}"
-                            if len(unpaid_months) > 6:
-                                result += f" +{len(unpaid_months)-6} more"
-                            result += "\n"
-                        else:
-                            result += "🎉 All months paid!\n"
-
-                        result += f"\n💳 Amount/Month: ₹{info.get('amountPerPerson', '-')}\n"
-                        result += f"📱 GPay: {info.get('gpay', '-')}\n"
-                        results.append(result)
-        except Exception:
-            pass
-
-    return "\n".join(results) if results else None
-
-def _search_member_by_name(name):
-    """Search for a member by name across ALL chit files."""
-    try:
-        folders = gs_get_chit_folders()
-        all_files = []
-        for folder in folders:
-            files = gs_get_chit_files(folder)
-            all_files.extend(files)
-        return _search_member_in_chits(name, all_files)
     except Exception:
-        return None
+        pass
+    return None
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
