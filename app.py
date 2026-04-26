@@ -1004,11 +1004,23 @@ def _handle_bot_message(from_number, text):
                                 break
 
                     if current_row:
-                        # Build reply from all columns dynamically
+                        # Build reply, skip discount, format month as MMM-YYYY
                         reply = f"📅 *{chit_n}* — Current Month Status\n━━━━━━━━━━━━━━━━━━━━\n"
                         icons = {"Chit Month": "📅", "Chit Number": "📌", "Conducted": "✅", "Taken By": "🎯", "Chit Amount": "💰", "Amount Per Person": "💳"}
+                        skip_cols = ["discount", "discount amount", "discountamount"]
                         for key, val in current_row.items():
+                            if key.lower().strip() in skip_cols:
+                                continue
                             icon = icons.get(key, "▪️")
+                            # Format date column as MMM-YYYY
+                            if date_col and key == date_col:
+                                for fmt in date_formats:
+                                    try:
+                                        dt = datetime.strptime(str(val).strip(), fmt)
+                                        val = dt.strftime("%b-%Y")
+                                        break
+                                    except (ValueError, Exception):
+                                        continue
                             reply += f"{icon} {key}: *{val}*\n"
                     else:
                         available = []
