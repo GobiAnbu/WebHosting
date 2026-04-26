@@ -757,16 +757,68 @@ def _handle_bot_message(from_number, text):
 
         # ---- RESET: hi / hello / start → show chit list ----
         if text_lower in ("hi", "hello", "hey", "hii", "hai", "start", "reset", "menu"):
-            chit_files = _get_all_chit_files_list()
-            if not chit_files:
+            all_files = _get_all_chit_files_list()
+            if not all_files:
                 send_whatsapp_message(from_number, "⚠️ No chit files found. Please contact the administrator.")
                 return
 
-            # Build numbered chit list
+            # Normalize sender number for matching
+            clean_from = from_number.lstrip("+").lstrip("0")
+            if clean_from.startswith("91"):
+                clean_from = clean_from[2:]
+
+            # Filter chits where contactNumber matches the sender's phone
+            chit_files = []
+            for cf in all_files:
+                try:
+                    info = gs_get_chit_number(cf)
+                    contact = str(info.get("contactNumber", "")).strip().replace(" ", "")
+                    clean_contact = contact.lstrip("+").lstrip("0")
+                    if clean_contact.startswith("91"):
+                        clean_contact = clean_contact[2:]
+                    if clean_contact and clean_contact == clean_from:
+                        chit_files.append(cf)
+                except Exception:
+                    pass
+
+            if not chit_files:
+                send_whatsapp_message(from_number,
+                    "🔍 Sorry, your phone number is not linked to any chit.\n\n"
+                    "Please contact the chit administrator to add your number.\n\n"
+                    f"📱 Your number: {from_number}"
+                )
+                return
+
+            # If only 1 chit, auto-select it
+            if len(chit_files) == 1:
+                selected = chit_files[0]
+                try:
+                    info = gs_get_chit_number(selected)
+                    chit_name = info.get("chitName", selected.replace(".xlsx", ""))
+                except Exception:
+                    chit_name = selected.replace(".xlsx", "")
+
+                _bot_sessions[from_number] = {"step": "ready", "chitFile": selected, "chitName": chit_name}
+                reply = (
+                    f"👋 *Welcome to Chit Fund Bot!*\n\n"
+                    f"Your chit: *{chit_name}*\n\n"
+                    "Send any command:\n\n"
+                    "📊 *status* — Chit status & details\n"
+                    "💰 *balance* — Amount to pay\n"
+                    "👥 *members* — Member list\n"
+                    "📋 *details* — Full chit info\n"
+                    "🔔 *reminder* — Payment reminder message\n"
+                    "📢 *tomorrow* — Chit tomorrow message\n"
+                    "🔍 *Your name* — Your payment history\n"
+                    "❓ *help* — Show commands"
+                )
+                send_whatsapp_message(from_number, reply)
+                return
+
+            # Multiple chits — show numbered list
             lines = ["👋 *Welcome to Chit Fund Bot!*\n"]
-            lines.append("Please select your chit by sending the *number*:\n")
+            lines.append("You have multiple chits. Please select by sending the *number*:\n")
             for i, cf in enumerate(chit_files, 1):
-                # Try to get chit name
                 try:
                     info = gs_get_chit_number(cf)
                     name = info.get("chitName", cf.replace(".xlsx", ""))
