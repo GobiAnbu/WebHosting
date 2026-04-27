@@ -54,6 +54,11 @@ def background_refresh():
         try:
             print(f"[Cache] 🔄 Starting initial data refresh (attempt {attempt}/3)...")
             refresh_all_files()
+            cached_files = get_all_cached_alldata()
+            print(f"[Cache] 📊 Initial load: {len(cached_files)} files cached: {list(cached_files.keys())}")
+            for cf, data in cached_files.items():
+                if isinstance(data, dict):
+                    print(f"[Cache] 📊 {cf}: contactNumber='{data.get('contactNumber', '')}', chitName='{data.get('chitName', '')}', members={len(data.get('members', []))}")
             initial_map = _build_contact_chit_map()
             if initial_map:
                 _contact_chit_cache["data"] = initial_map
@@ -86,6 +91,11 @@ def background_refresh():
         try:
             print("[Cache] 🔄 Quick retry for missing files...")
             refresh_all_files()
+            cached_files = get_all_cached_alldata()
+            print(f"[Cache] 📊 Quick retry: {len(cached_files)} files cached: {list(cached_files.keys())}")
+            for cf, data in cached_files.items():
+                if isinstance(data, dict):
+                    print(f"[Cache] 📊 {cf}: contactNumber='{data.get('contactNumber', '')}', chitName='{data.get('chitName', '')}', members={len(data.get('members', []))}")
             new_map = _build_contact_chit_map()
             if new_map:
                 _contact_chit_cache["data"] = new_map
@@ -99,12 +109,18 @@ def background_refresh():
         try:
             print("[Cache] 🔄 Background refresh (every 15 min)...")
             refresh_all_files()
+            cached_files = get_all_cached_alldata()
+            print(f"[Cache] 📊 After refresh: {len(cached_files)} files cached: {list(cached_files.keys())}")
+            for cf, data in cached_files.items():
+                if isinstance(data, dict):
+                    print(f"[Cache] 📊 {cf}: contactNumber='{data.get('contactNumber', '')}', chitName='{data.get('chitName', '')}', members={len(data.get('members', []))}")
             # Rebuild contact map with fresh data
             new_map = _build_contact_chit_map()
             # Only replace if we got data — protect against API failures
             if new_map:
                 _contact_chit_cache["data"] = new_map
                 _contact_chit_cache["timestamp"] = time.time()
+                print(f"[Cache] ✅ Background refresh done — {len(new_map)} phone numbers mapped")
             else:
                 print("[Cache] ⚠️ Refresh returned empty map, keeping existing data")
         except Exception as e:
@@ -125,12 +141,17 @@ def _refresh_after_update(chit_file):
         print(f"[Cache] 🔄 Refreshing after update: {chit_file}")
         clear_cache(chit_file)
         _refresh_single_file(chit_file)
+        # Log what was refreshed
+        cached_files = get_all_cached_alldata()
+        updated_data = cached_files.get(chit_file, {})
+        if isinstance(updated_data, dict):
+            print(f"[Cache] 📊 Updated {chit_file}: contactNumber='{updated_data.get('contactNumber', '')}', chitName='{updated_data.get('chitName', '')}', members={len(updated_data.get('members', []))}")
         # Rebuild contact map with fresh data
         new_map = _build_contact_chit_map()
         if new_map:
             _contact_chit_cache["data"] = new_map
             _contact_chit_cache["timestamp"] = time.time()
-        print(f"[Cache] ✅ Refresh after update done: {chit_file}")
+        print(f"[Cache] ✅ Refresh after update done: {chit_file} — {len(new_map) if new_map else 0} phone numbers mapped")
     except Exception as e:
         print(f"[Cache] ❌ Refresh after update failed for {chit_file}: {e}")
 
@@ -540,6 +561,7 @@ def update_member_payment():
     if not chit_file or not member_name or not month:
         return jsonify({"error": "Missing parameters"}), 400
     try:
+        print(f"[UI Update] 💰 Payment update: file='{chit_file}', member='{member_name}', month='{month}', status='{status}', by='{session.get('username', 'unknown')}'")
         from google_sheets_api import clear_cache, _refresh_single_file
         result = requests.post(
             os.environ.get("APPS_SCRIPT_URL", ""),
@@ -563,6 +585,8 @@ def send_campaign():
     discount_amount = data.get("discountAmount", "")
     name = data.get("name", "")
     amount_need_to_pay = math.ceil((float(chit_amount) / 20) / 10) * 10 if chit_amount else 0
+
+    print(f"[UI Update] 📢 Campaign: file='{chit_file}', name='{name}', chitAmount='{chit_amount}', discount='{discount_amount}', amountToPay={amount_need_to_pay}, by='{session.get('username', 'unknown')}'")
 
     # Update Google Sheet (always happens regardless of toggle)
     update_campaign(chit_file, name, chit_amount, discount_amount, amount_need_to_pay)
@@ -1053,11 +1077,18 @@ def _get_chits_for_phone(phone):
 def _rebuild_contact_cache():
     """Rebuild contact-chit cache in background."""
     try:
+        print("[Cache] 🔄 Background contact map rebuild triggered...")
+        cached_files = get_all_cached_alldata()
+        print(f"[Cache] 📊 Rebuild: {len(cached_files)} files in cache: {list(cached_files.keys())}")
+        for cf, d in cached_files.items():
+            if isinstance(d, dict):
+                print(f"[Cache] 📊 {cf}: contactNumber='{d.get('contactNumber', '')}', chitName='{d.get('chitName', '')}', members={len(d.get('members', []))}")
         data = _build_contact_chit_map()
         # Only update if we got data — never replace good cache with empty
         if data:
             _contact_chit_cache["data"] = data
             _contact_chit_cache["timestamp"] = time.time()
+            print(f"[Cache] ✅ Background rebuild done — {len(data)} phone numbers mapped")
         else:
             print("[Cache] ⚠️ Background rebuild returned empty map, keeping old data")
     except Exception as e:
@@ -1523,6 +1554,7 @@ def _handle_bot_message(from_number, text):
                         break
 
             if selected_name:
+                print(f"[WA Bot] 📊 Update - name selected: phone={from_number}, chit='{chit_name}', name='{selected_name}'")
                 _set_bot_session(from_number, {
                     "step": "update_enter_amount",
                     "chitFile": cf,
@@ -1571,6 +1603,7 @@ def _handle_bot_message(from_number, text):
             }
 
             try:
+                print(f"[WA Bot] 📊 Update - campaign: phone={from_number}, chit='{chit_name}', name='{selected_name}', chitAmount={chit_amount}, discount={discount_amount}, amountToPay={amount_need_to_pay}")
                 update_campaign(cf, selected_name, str(chit_amount), str(discount_amount), amount_need_to_pay)
                 # Refresh this file's cache immediately in background
                 threading.Thread(target=_refresh_after_update, args=(cf,), daemon=True).start()
@@ -1640,7 +1673,7 @@ def _handle_bot_message(from_number, text):
                 name = chit_names[i] if i < len(chit_names) else cf.replace(".xlsx", "")
                 if text_lower in name.lower() or text_lower in cf.lower().replace(".xlsx", ""):
                     role = chit_roles[i] if i < len(chit_roles) else "owner"
-                    member_name = chit_member_names[i] if i < len(chit_member_names) else ""
+                    member_name = chit_member_names[i] if i < len(chit_memberNames) else ""
                     _set_bot_session(from_number, {"step": "ready", "chitFile": cf, "chitName": name, "role": role, "memberName": member_name})
                     if role == "member":
                         _send_member_menu(from_number, name, f"You selected *{name}*\n\nHi *{member_name}*! Select an option below.")
@@ -1771,9 +1804,3 @@ def _search_member_in_chit(name, chit_file):
         pass
     return None
 
-if __name__ == "__main__":
-    start_background_refresh()
-    app.run(debug=True, port=5001)
-else:
-    # Also start when running via gunicorn/Procfile
-    start_background_refresh()
