@@ -69,6 +69,31 @@ def background_refresh():
     # ALWAYS set cache ready — even if all attempts failed, let the bot work with empty cache
     # rather than permanently showing "starting up"
     _cache_ready = True
+
+    # Quick retry: if some files are missing after initial load, retry after 2 min
+    cached_files = get_all_cached_alldata()
+    all_known = set()
+    try:
+        folders = gs_get_chit_folders()
+        for folder in folders:
+            all_known.update(gs_get_chit_files(folder))
+    except Exception:
+        pass
+    missing = all_known - set(cached_files.keys())
+    if missing:
+        print(f"[Cache] ⚠️ {len(missing)} files still missing after startup: {missing}. Retrying in 2 min...")
+        time.sleep(120)
+        try:
+            print("[Cache] 🔄 Quick retry for missing files...")
+            refresh_all_files()
+            new_map = _build_contact_chit_map()
+            if new_map:
+                _contact_chit_cache["data"] = new_map
+                _contact_chit_cache["timestamp"] = time.time()
+                print(f"[Cache] ✅ Quick retry done — {len(new_map)} phone numbers mapped")
+        except Exception as e:
+            print(f"[Cache] ❌ Quick retry failed: {e}")
+
     while True:
         time.sleep(900)  # Refresh every 15 minutes
         try:
