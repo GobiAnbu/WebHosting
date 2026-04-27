@@ -57,18 +57,33 @@ def _bg_refresh_key(key):
                 p["folder"] = folder
             resp = requests.get(_get_url(), params=p, timeout=30)
             _set_cache(key, resp.json())
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Cache] ⚠️ Background refresh failed for {key}: {e}")
     finally:
         with _cache_lock:
             _refreshing_keys.discard(key)
 
 def _fetch_and_cache(action, file_name, cache_key):
     """Fetch from Apps Script and store in cache."""
-    resp = requests.get(_get_url(), params=_params(action, file=file_name), timeout=30)
-    data = resp.json()
-    _set_cache(cache_key, data)
-    return data
+    try:
+        resp = requests.get(_get_url(), params=_params(action, file=file_name), timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        if data:  # Only cache non-empty responses
+            _set_cache(cache_key, data)
+            return data
+        else:
+            print(f"[Cache] ⚠️ Empty response for {action} on {file_name}")
+            # Return existing cache if available
+            cached = _get_cached(cache_key, allow_stale=True)
+            return cached if cached is not None else data
+    except Exception as e:
+        print(f"[Cache] ❌ Fetch failed for {action} on {file_name}: {e}")
+        # Return existing stale cache if available rather than failing
+        cached = _get_cached(cache_key, allow_stale=True)
+        if cached is not None:
+            return cached
+        raise
 
 def _set_cache(key, data):
     with _cache_lock:
@@ -238,6 +253,7 @@ def refresh_all_files():
             all_files.extend(files)
 
         if not all_files:
+            print("[Cache] ⚠️ No chit files found to refresh")
             return
 
         # Use thread pool to refresh files in parallel (max 4 concurrent)
@@ -249,18 +265,18 @@ def refresh_all_files():
             for future in as_completed(futures, timeout=120):
                 try:
                     future.result()
-                except Exception:
-                    pass
-    except Exception:
-        pass
+                except Exception as e:
+                    print(f"[Cache] ⚠️ File refresh error: {e}")
+    except Exception as e:
+        print(f"[Cache] ❌ refresh_all_files error: {e}")
 
 def _refresh_single_file(file_name):
     """Refresh both cache entries for a single file."""
     try:
         _fetch_and_cache("getAllChitData", file_name, f"alldata_{file_name}")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Cache] ⚠️ Failed to refresh alldata for {file_name}: {e}")
     try:
         _fetch_and_cache("getChitViewData", file_name, f"viewdata_{file_name}")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Cache] ⚠️ Failed to refresh viewdata for {file_name}: {e}")

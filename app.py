@@ -36,20 +36,31 @@ _bg_thread_started = False
 
 def background_refresh():
     """Continuously refresh cache in background using parallel fetches."""
+    global _cache_ready
     # Initial warm-up: refresh all files immediately on startup
+    print("[Cache] 🔄 Starting initial data refresh...")
     refresh_all_files()
     # Pre-build contact-chit mapping so bot responds instantly
-    _contact_chit_cache["data"] = _build_contact_chit_map()
-    _contact_chit_cache["timestamp"] = time.time()
+    initial_map = _build_contact_chit_map()
+    if initial_map:
+        _contact_chit_cache["data"] = initial_map
+        _contact_chit_cache["timestamp"] = time.time()
+    _cache_ready = True
+    print(f"[Cache] ✅ Initial cache ready — {len(_contact_chit_cache['data'])} phone numbers mapped")
     while True:
-        time.sleep(30)  # Refresh every 30 seconds (parallel makes this fast enough)
+        time.sleep(30)  # Refresh every 30 seconds
         try:
             refresh_all_files()
             # Rebuild contact map with fresh data
-            _contact_chit_cache["data"] = _build_contact_chit_map()
-            _contact_chit_cache["timestamp"] = time.time()
-        except Exception:
-            pass
+            new_map = _build_contact_chit_map()
+            # Only replace if we got data — protect against API failures
+            if new_map:
+                _contact_chit_cache["data"] = new_map
+                _contact_chit_cache["timestamp"] = time.time()
+            else:
+                print("[Cache] ⚠️ Refresh returned empty map, keeping existing data")
+        except Exception as e:
+            print(f"[Cache] ❌ Refresh error: {e}")
 
 def start_background_refresh():
     global _bg_thread_started
@@ -773,12 +784,24 @@ _bot_sessions = {}
 # Cached mapping: normalized phone → [{"file": "x.xlsx", "chitName": "..."}]
 _contact_chit_cache = {"data": {}, "timestamp": 0}
 _CONTACT_CACHE_TTL = 600  # seconds (10 minutes) — background thread refreshes every 30s anyway
+_cache_ready = False  # True once first full cache build completes
 
 def _normalize_phone(phone):
-    """Strip +, leading 0, and country code 91."""
-    p = str(phone).strip().replace(" ", "").lstrip("+").lstrip("0")
+    """Strip +, leading 0, country code 91, handle floats and non-digit chars."""
+    p = str(phone).strip().replace(" ", "")
+    # Handle float numbers from Google Sheets (e.g. 9876543210.0)
+    if "." in p:
+        try:
+            p = str(int(float(p)))
+        except (ValueError, OverflowError):
+            pass
+    # Remove all non-digit characters
+    p = ''.join(c for c in p if c.isdigit())
+    # Strip country code 91 if present
     if p.startswith("91") and len(p) > 10:
         p = p[2:]
+    # Strip leading zeros
+    p = p.lstrip("0")
     return p
 
 def _build_contact_chit_map():
@@ -791,25 +814,39 @@ def _build_contact_chit_map():
         for folder in folders:
             files = gs_get_chit_files(folder)
             all_files.extend(files)
-    except Exception:
+    except Exception as e:
+        print(f"[ContactMap] ❌ Failed to get folders/files: {e}")
         return mapping
+
+    print(f"[ContactMap] Building map for {len(all_files)} files...")
 
     for cf in all_files:
         try:
             info = gs_get_chit_number(cf)
-        except Exception:
+        except Exception as e:
+            print(f"[ContactMap] ❌ Failed to get info for {cf}: {e}")
             continue
         chit_name = info.get("chitName", cf.replace(".xlsx", ""))
 
         # Map owner (contactNumber from chitDetails)
-        contact = str(info.get("contactNumber", "")).strip().replace(" ", "")
-        clean = _normalize_phone(contact)
-        if clean:
-            if clean not in mapping:
-                mapping[clean] = []
-            # Avoid duplicate entries
-            if not any(e["file"] == cf and e["role"] == "owner" for e in mapping[clean]):
-                mapping[clean].append({"file": cf, "chitName": chit_name, "role": "owner"})
+        contact_raw = info.get("contactNumber", "")
+        contact = str(contact_raw).strip().replace(" ", "")
+        # Handle multiple numbers separated by , or /
+        contact_parts = [c.strip() for c in contact.replace("/", ",").split(",") if c.strip()]
+        if not contact_parts and contact:
+            contact_parts = [contact]
+
+        owner_phones = set()
+        for cp in contact_parts:
+            clean = _normalize_phone(cp)
+            if clean and len(clean) >= 10:
+                owner_phones.add(clean)
+                if clean not in mapping:
+                    mapping[clean] = []
+                if not any(e["file"] == cf and e["role"] == "owner" for e in mapping[clean]):
+                    mapping[clean].append({"file": cf, "chitName": chit_name, "role": "owner"})
+
+        print(f"[ContactMap] {cf} → contactNumber='{contact_raw}' → owners={owner_phones}")
 
         # Map members (MobileNumber from chitMembers)
         try:
@@ -818,14 +855,24 @@ def _build_contact_chit_map():
             for member in members:
                 mobile = str(member.get("mobile", "")).strip().replace(" ", "")
                 member_clean = _normalize_phone(mobile)
-                if member_clean:
+                if member_clean and len(member_clean) >= 10:
                     if member_clean not in mapping:
                         mapping[member_clean] = []
-                    # Avoid duplicate entries
-                    if not any(e["file"] == cf for e in mapping[member_clean]):
-                        mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "member", "memberName": member.get("name", "")})
-        except Exception:
-            pass
+                    # If this phone is the owner, ensure owner entry exists (don't add as member)
+                    if member_clean in owner_phones:
+                        if not any(e["file"] == cf and e["role"] == "owner" for e in mapping[member_clean]):
+                            mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "owner"})
+                    else:
+                        # Only add member entry if no entry for this file yet
+                        if not any(e["file"] == cf for e in mapping[member_clean]):
+                            mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "member", "memberName": member.get("name", "")})
+        except Exception as e:
+            print(f"[ContactMap] ❌ Failed to map members for {cf}: {e}")
+
+    # Log final mapping summary
+    for phone, entries in mapping.items():
+        print(f"[ContactMap] {phone}: {[(e['chitName'], e['role']) for e in entries]}")
+    print(f"[ContactMap] ✅ Map built: {len(mapping)} phone numbers")
 
     return mapping
 
@@ -833,28 +880,51 @@ def _get_chits_for_phone(phone):
     """Get chit files belonging to a phone number, using cache."""
     now = time.time()
     clean = _normalize_phone(phone)
+    print(f"[Bot] Looking up phone: raw='{phone}' normalized='{clean}'")
 
     # If cache is stale, trigger background rebuild but still return old data
     if now - _contact_chit_cache["timestamp"] > _CONTACT_CACHE_TTL:
         if _contact_chit_cache["data"]:
             # Return stale data now, rebuild in background
             threading.Thread(target=_rebuild_contact_cache, daemon=True).start()
-            return _contact_chit_cache["data"].get(clean, [])
+            result = _contact_chit_cache["data"].get(clean, [])
+            if result:
+                return result
         else:
             # No data at all — must build synchronously
             _contact_chit_cache["data"] = _build_contact_chit_map()
             _contact_chit_cache["timestamp"] = time.time()
 
-    return _contact_chit_cache["data"].get(clean, [])
+    result = _contact_chit_cache["data"].get(clean, [])
+
+    # If not found and cache was built recently (could be a race condition on startup),
+    # try one fresh build as a fallback
+    if not result and _cache_ready:
+        print(f"[Bot] Phone {clean} not in cache ({len(_contact_chit_cache['data'])} entries). Trying fresh build...")
+        try:
+            fresh_map = _build_contact_chit_map()
+            if fresh_map:
+                result = fresh_map.get(clean, [])
+                if result:
+                    _contact_chit_cache["data"] = fresh_map
+                    _contact_chit_cache["timestamp"] = time.time()
+        except Exception as e:
+            print(f"[Bot] Fresh build failed: {e}")
+
+    return result
 
 def _rebuild_contact_cache():
     """Rebuild contact-chit cache in background."""
     try:
         data = _build_contact_chit_map()
-        _contact_chit_cache["data"] = data
-        _contact_chit_cache["timestamp"] = time.time()
-    except Exception:
-        pass
+        # Only update if we got data — never replace good cache with empty
+        if data:
+            _contact_chit_cache["data"] = data
+            _contact_chit_cache["timestamp"] = time.time()
+        else:
+            print("[Cache] ⚠️ Background rebuild returned empty map, keeping old data")
+    except Exception as e:
+        print(f"[Cache] ❌ Background rebuild error: {e}")
 
 @app.route("/webhook", methods=["GET"])
 def webhook_verify():
@@ -983,11 +1053,16 @@ def _handle_bot_message(from_number, text):
             matched = _get_chits_for_phone(from_number)
 
             if not matched:
-                send_whatsapp_message(from_number,
-                    "🔍 Sorry, your phone number is not linked to any chit.\n\n"
-                    "Please contact the chit administrator to add your number.\n\n"
-                    f"📱 Your number: {from_number}"
-                )
+                if not _cache_ready:
+                    send_whatsapp_message(from_number,
+                        "⏳ The system is still starting up. Please wait 30 seconds and send *hi* again."
+                    )
+                else:
+                    send_whatsapp_message(from_number,
+                        "🔍 Sorry, your phone number is not linked to any chit.\n\n"
+                        "Please contact the chit administrator to add your number.\n\n"
+                        f"📱 Your number: {from_number}"
+                    )
                 return
 
             if len(matched) == 1:
