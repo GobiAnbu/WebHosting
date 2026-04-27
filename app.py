@@ -280,7 +280,6 @@ def _send_member_menu(phone, header_text, body_text):
                 "rows": [
                     {"id": "cmd_details", "title": "📋 Chit Details"},
                     {"id": "cmd_month_status", "title": "📅 Current Month Status"},
-                    {"id": "cmd_my_payment", "title": "💳 My Payment History"},
                     {"id": "cmd_change", "title": "🔄 Change Chit"},
                 ]
             }]
@@ -1461,22 +1460,6 @@ def _handle_bot_message(from_number, text):
             if text_lower == "cmd_change":
                 _set_bot_session(from_number, {})
                 _handle_bot_message(from_number, "hi")
-                return
-
-            if text_lower == "cmd_my_payment":
-                member_name = sess.get("memberName", "")
-                if member_name:
-                    result = _search_member_in_chit(member_name, cf)
-                    if result:
-                        send_whatsapp_message(from_number, result)
-                    else:
-                        send_whatsapp_message(from_number, f"⚠️ No payment history found for *{member_name}*.")
-                else:
-                    send_whatsapp_message(from_number, "⚠️ Member name not found. Please type your name to search.")
-                if user_role == "member":
-                    _send_member_menu(from_number, f"💳 {chit_name}", "What would you like to do next?")
-                else:
-                    _send_command_menu(from_number, f"💳 {chit_name}", "What would you like to do next?")
                 return
 
             if text_lower == "cmd_update":
