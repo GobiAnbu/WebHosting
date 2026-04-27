@@ -15,27 +15,21 @@ API_KEY = os.environ.get("APPS_SCRIPT_API_KEY", "")
 # ==================== CACHE ====================
 _cache = {}
 _cache_lock = threading.Lock()
-CACHE_TTL = 600       # 10 min hard expiry
-CACHE_STALE = 30      # After 30s, data is "stale" but still served while refreshing
+CACHE_TTL = 1200      # 20 min hard expiry (longer than 15-min background refresh)
+CACHE_STALE = 900     # 15 min — data always served, no per-key background refresh needed
 _refreshing_keys = set()  # Track keys currently being refreshed
 
 def _get_cached(key, allow_stale=True):
-    """Get cached data. If allow_stale=True, returns stale data and triggers background refresh."""
+    """Get cached data. Always returns cached data if available (stale-while-revalidate).
+    Background thread handles refresh every 15 min, so no per-key refresh needed."""
     with _cache_lock:
         if key in _cache:
             data, ts = _cache[key]
             age = time.time() - ts
-            if age < CACHE_STALE:
-                return data  # Fresh
-            if allow_stale:
-                # Stale but usable — trigger background refresh if not already running
-                if key not in _refreshing_keys:
-                    _refreshing_keys.add(key)
-                    threading.Thread(target=_bg_refresh_key, args=(key,), daemon=True).start()
-                return data  # Return stale data immediately
-            # Not allowing stale and data is old — treat as miss
-            if age >= CACHE_TTL:
-                del _cache[key]
+            if age < CACHE_TTL:
+                return data  # Always return cached data until hard expiry
+            # Hard expired — delete it
+            del _cache[key]
     return None
 
 def _bg_refresh_key(key):

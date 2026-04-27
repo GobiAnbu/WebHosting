@@ -70,8 +70,9 @@ def background_refresh():
     # rather than permanently showing "starting up"
     _cache_ready = True
     while True:
-        time.sleep(60)  # Refresh every 60 seconds
+        time.sleep(900)  # Refresh every 15 minutes
         try:
+            print("[Cache] 🔄 Background refresh (every 15 min)...")
             refresh_all_files()
             # Rebuild contact map with fresh data
             new_map = _build_contact_chit_map()
@@ -90,6 +91,23 @@ def start_background_refresh():
         _bg_thread_started = True
         t = threading.Thread(target=background_refresh, daemon=True)
         t.start()
+
+def _refresh_after_update(chit_file):
+    """Called after data is updated via UI or WhatsApp. Refreshes that file's cache
+    and rebuilds the contact map. Runs in background so the caller doesn't wait."""
+    from google_sheets_api import clear_cache, _refresh_single_file
+    try:
+        print(f"[Cache] 🔄 Refreshing after update: {chit_file}")
+        clear_cache(chit_file)
+        _refresh_single_file(chit_file)
+        # Rebuild contact map with fresh data
+        new_map = _build_contact_chit_map()
+        if new_map:
+            _contact_chit_cache["data"] = new_map
+            _contact_chit_cache["timestamp"] = time.time()
+        print(f"[Cache] ✅ Refresh after update done: {chit_file}")
+    except Exception as e:
+        print(f"[Cache] ❌ Refresh after update failed for {chit_file}: {e}")
 
 CONFIG_FILE = "config.json"
 
@@ -501,9 +519,8 @@ def update_member_payment():
             timeout=30
         )
         resp_data = result.json()
-        clear_cache(chit_file)
-        # Re-fetch in background so cache is warm for next request
-        threading.Thread(target=_refresh_single_file, args=(chit_file,), daemon=True).start()
+        # Refresh this file's cache and rebuild contact map in background
+        threading.Thread(target=_refresh_after_update, args=(chit_file,), daemon=True).start()
         return jsonify(resp_data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -520,6 +537,9 @@ def send_campaign():
 
     # Update Google Sheet (always happens regardless of toggle)
     update_campaign(chit_file, name, chit_amount, discount_amount, amount_need_to_pay)
+
+    # Refresh this file's cache immediately in background
+    threading.Thread(target=_refresh_after_update, args=(chit_file,), daemon=True).start()
 
     # If WhatsApp web sending is disabled, return success with sheet-only message
     if not _wa_web_enabled:
@@ -815,7 +835,7 @@ _bot_sessions = {}
 
 # Cached mapping: normalized phone → [{"file": "x.xlsx", "chitName": "..."}]
 _contact_chit_cache = {"data": {}, "timestamp": 0}
-_CONTACT_CACHE_TTL = 600  # seconds (10 minutes) — background thread refreshes every 30s anyway
+_CONTACT_CACHE_TTL = 900  # 15 minutes — matches background refresh interval
 _cache_ready = False  # True once first full cache build completes
 
 def _normalize_phone(phone):
@@ -1459,6 +1479,8 @@ def _handle_bot_message(from_number, text):
 
             try:
                 update_campaign(cf, selected_name, str(chit_amount), str(discount_amount), amount_need_to_pay)
+                # Refresh this file's cache immediately in background
+                threading.Thread(target=_refresh_after_update, args=(cf,), daemon=True).start()
             except Exception as e:
                 print(f"[Bot] Update campaign error: {e}")
 
