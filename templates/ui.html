@@ -368,6 +368,22 @@
             border-style: solid;
             border-color: transparent rgba(37,211,102,0.18) transparent transparent;
         }
+        .wa-bubble { cursor: pointer; transition: background 0.2s; }
+        .wa-bubble:active { background: rgba(37,211,102,0.25); }
+        .copy-btn {
+            display: block; width: 100%; margin-top: 12px; padding: 10px;
+            background: rgba(37,211,102,0.15); border: 1px solid rgba(37,211,102,0.3);
+            border-radius: 10px; color: #25D366; font-size: 0.88rem; font-weight: 600;
+            font-family: 'Inter', sans-serif; cursor: pointer; transition: all 0.2s;
+        }
+        .copy-btn:hover { background: rgba(37,211,102,0.25); }
+        .copy-toast {
+            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+            background: #25D366; color: #fff; padding: 10px 24px; border-radius: 12px;
+            font-size: 0.88rem; font-weight: 600; box-shadow: 0 4px 20px rgba(37,211,102,0.4);
+            opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 9999;
+        }
+        .copy-toast.show { opacity: 1; }
 
         /* TOAST */
         .toast {
@@ -448,6 +464,8 @@
                     <div class="phone-mic">🎤</div>
                 </div>
             </div>
+            <button class="copy-btn" onclick="copyPreviewText()">📋 Copy Message</button>
+            <div class="copy-toast" id="copyToast">✅ Copied to clipboard!</div>
         </div>
     </div>
 
@@ -708,6 +726,26 @@
         document.getElementById('userName').textContent = data.username||'—';
         const r = document.getElementById('userRole'); r.textContent = data.role; r.className = 'user-dropdown-role ' + (data.role==='admin'?'ud-role-admin':'ud-role-user');
     });
+
+    // Copy preview text
+    function copyPreviewText() {
+        const text = document.getElementById("waPreviewText").innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            const toast = document.getElementById("copyToast");
+            toast.classList.add("show");
+            setTimeout(() => toast.classList.remove("show"), 2000);
+        }).catch(() => {
+            // Fallback for older browsers
+            const ta = document.createElement("textarea");
+            ta.value = document.getElementById("waPreviewText").innerText;
+            document.body.appendChild(ta); ta.select(); document.execCommand("copy");
+            document.body.removeChild(ta);
+            const toast = document.getElementById("copyToast");
+            toast.classList.add("show");
+            setTimeout(() => toast.classList.remove("show"), 2000);
+        });
+    }
+    document.querySelector(".wa-bubble").addEventListener("click", copyPreviewText);
 </script>
 </body>
 </html>
