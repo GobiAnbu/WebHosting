@@ -185,7 +185,6 @@ def _send_command_menu(phone, header_text, body_text):
                     {"id": "cmd_update", "title": "📊 Update Chit Details"},
                     {"id": "cmd_reminder", "title": "🔔 Payment Reminder"},
                     {"id": "cmd_tomorrow", "title": "📢 Chit Tomorrow"},
-                    {"id": "cmd_rules", "title": "📜 Generate Rules"},
                     {"id": "cmd_change", "title": "🔄 Change Chit"},
                 ]
             }]
@@ -971,96 +970,6 @@ def set_wa_web_enabled():
         pass
     return jsonify({"success": True, "enabled": _wa_web_enabled})
 
-def _format_inr(num):
-    """Format number in Indian currency style."""
-    s = str(int(num))
-    if len(s) <= 3:
-        return s
-    last3 = s[-3:]
-    rest = s[:-3]
-    parts = []
-    while rest:
-        parts.insert(0, rest[-2:])
-        rest = rest[:-2]
-    return ",".join(parts) + "," + last3
-
-
-def _generate_chit_rules(total, members, duration, per_person):
-    """Generate Chit Fund rules message (bilingual)."""
-    f = _format_inr
-    interest = 2
-    rules = (
-        f"📢 *Chit Fund Rules*\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"1️⃣ Total Duration: *{duration} months* | Total Members: *{members}*\n\n"
-        f"2️⃣ Total Chit Amount: *₹{f(total)}*\n"
-        f"👉 Monthly payment per person: Up to *₹{f(per_person)}* (may reduce based on bidding)\n\n"
-        f"3️⃣ First month chit amount will be taken by the company. From the 2nd month onwards, bidding will be conducted.\n\n"
-        f"4️⃣ Chit auction will be held on the *5th* of *every month*.\n\n"
-        f"5️⃣ Members must pay the chit amount on or before the *15th* of every month.\n\n"
-        f"6️⃣ The chit amount will be given to the winner within *1–2 days*.\n\n"
-        f"7️⃣ Members who want to take the chit must participate in the bidding process.\n\n"
-        f"8️⃣ The member who agrees to the lowest bid will win that month's chit.\n\n"
-        f"9️⃣ If no one bids, a lucky draw will be conducted.\n"
-        f"👉 Winner receives: Total chit amount – Current month bid amount\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📢 *சிட்டு விதிமுறைகள்*\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"1️⃣ மொத்த காலம்: *{duration} மாதங்கள்* | மொத்த உறுப்பினர்கள்: *{members}*\n\n"
-        f"2️⃣ மொத்த சிட்டு தொகை: *₹{f(total)}*\n"
-        f"👉 மாதாந்திர கட்டணம்: அதிகபட்சம் *₹{f(per_person)}*\n\n"
-        f"3️⃣ முதல் மாத சிட்டு தொகையை நிறுவனம் எடுத்துக்கொள்ளும்.\n\n"
-        f"4️⃣ ஒவ்வொரு மாதமும் *5ஆம்* தேதி சிட்டு ஏலம் நடைபெறும்.\n\n"
-        f"5️⃣ உறுப்பினர்கள் *15ஆம்* தேதிக்குள் தொகையை செலுத்த வேண்டும்.\n\n"
-        f"6️⃣ சிட்டு எடுத்தவருக்கு தொகை *1–2 நாட்களுக்குள்* வழங்கப்படும்.\n\n"
-        f"7️⃣ சிட்டு எடுக்க விரும்புபவர்கள் ஏலத்தில் பங்கேற்க வேண்டும்.\n\n"
-        f"8️⃣ குறைந்த தொகைக்கு சம்மதிக்கும் நபரே சிட்டு பெறுவார்.\n\n"
-        f"9️⃣ யாரும் ஏலம் விடவில்லை என்றால் லக்கி டிரா நடத்தப்படும்.\n\n"
-        f"📌 For more details, feel free to contact.\n"
-        f"📌 மேலும் விவரங்களுக்கு தொடர்பு கொள்ளவும்."
-    )
-    return rules
-
-
-def _generate_kootu_rules(total, members, duration, per_person):
-    """Generate Kootu rules message (bilingual)."""
-    f = _format_inr
-    commission = 2000
-    payout = total - commission
-    rules = (
-        f"📢 *Kootu Rules*\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"1️⃣ The kootu duration is *{duration} months* with *{members} members* (each member will receive the amount once).\n\n"
-        f"2️⃣ Total monthly collection: *₹{f(total)}* | Each member: *₹{f(per_person)}* per month.\n\n"
-        f"3️⃣ The kootu will be conducted on the *5th* of *every month*.\n\n"
-        f"4️⃣ Members must pay on or before the *15th* of every month.\n\n"
-        f"5️⃣ Every month, one member will receive the collected amount after deducting the commission.\n\n"
-        f"6️⃣ Commission of *₹{f(commission)}* will be deducted.\n"
-        f"👉 Member will receive: *₹{f(payout)}* (₹{f(total)} – ₹{f(commission)})\n\n"
-        f"7️⃣ The member will be selected through a *lucky draw* only.\n\n"
-        f"8️⃣ After receiving, members must continue paying till the end of the term.\n\n"
-        f"9️⃣ Amount will be given within *1–2 days* after collection.\n\n"
-        f"🔟 Members should not withdraw unless a replacement is arranged with group approval.\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📢 *கூட்டு விதிமுறைகள்*\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"1️⃣ கொட்டு காலம் *{duration} மாதங்கள்*, உறுப்பினர்கள் *{members} பேர்*.\n\n"
-        f"2️⃣ மாதந்தோறும் *₹{f(total)}* வசூலிக்கப்படும். ஒவ்வொருவரும் *₹{f(per_person)}* செலுத்த வேண்டும்.\n\n"
-        f"3️⃣ ஒவ்வொரு மாதமும் *5ஆம்* தேதி கொட்டு நடைபெறும்.\n\n"
-        f"4️⃣ *15ஆம்* தேதிக்குள் கட்டாயம் செலுத்த வேண்டும்.\n\n"
-        f"5️⃣ கமிஷன் கழித்த பிறகு ஒருவருக்கு தொகை வழங்கப்படும்.\n\n"
-        f"6️⃣ *₹{f(commission)}* கமிஷனாக கழிக்கப்படும்.\n"
-        f"👉 உறுப்பினர் பெறுவார்: *₹{f(payout)}* (₹{f(total)} – ₹{f(commission)})\n\n"
-        f"7️⃣ லக்கி டிரா மூலம் மட்டுமே தேர்வு செய்யப்படுவார்.\n\n"
-        f"8️⃣ தொகை பெற்ற பிறகும் கால அவதி முடியும் வரை தவணை செலுத்த வேண்டும்.\n\n"
-        f"9️⃣ தொகை *1–2 நாட்களுக்குள்* வழங்கப்படும்.\n\n"
-        f"🔟 நடுவில் விலக முடியாது; மாற்று உறுப்பினர் குழு அனுமதி பெற வேண்டும்.\n\n"
-        f"📌 For more details, feel free to contact.\n"
-        f"📌 மேலும் விவரங்களுக்கு தொடர்பு கொள்ளவும்."
-    )
-    return rules
-
-
 # ==================== BOT CONVERSATION LOGIC ====================
 
 def _handle_bot_message(from_number, text):
@@ -1132,7 +1041,7 @@ def _handle_bot_message(from_number, text):
             user_role = sess.get("role", "owner")
 
             # Block members from owner-only commands
-            if user_role == "member" and text_lower in ("cmd_update", "cmd_reminder", "cmd_tomorrow", "cmd_rules"):
+            if user_role == "member" and text_lower in ("cmd_update", "cmd_reminder", "cmd_tomorrow"):
                 send_whatsapp_message(from_number, "🚫 This option is only available for the chit owner.")
                 return
 
@@ -1309,26 +1218,6 @@ def _handle_bot_message(from_number, text):
                 _send_command_menu(from_number, chit_name, "What would you like to do next?")
                 return
 
-            if text_lower == "cmd_rules":
-                # Show type selection: Chit Fund or Kootu
-                _bot_sessions[from_number]["step"] = "rules_select_type"
-                send_whatsapp_interactive(from_number, {
-                    "type": "list",
-                    "header": {"type": "text", "text": "📜 Generate Rules"},
-                    "body": {"text": "Select the type of rules to generate:"},
-                    "action": {
-                        "button": "Select Type",
-                        "sections": [{
-                            "title": "Rule Types",
-                            "rows": [
-                                {"id": "rules_chit", "title": "💰 Chit Fund", "description": "With bidding system"},
-                                {"id": "rules_kootu", "title": "🤝 Kootu", "description": "Lucky draw only"},
-                            ]
-                        }]
-                    }
-                })
-                return
-
             if text_lower == "cmd_change":
                 _bot_sessions[from_number] = {}
                 _handle_bot_message(from_number, "hi")
@@ -1370,48 +1259,6 @@ def _handle_bot_message(from_number, text):
                     send_whatsapp_message(from_number, "⚠️ No members available.")
                 return
 
-            return
-
-        # ---- Handle rules type selection (rules_chit, rules_kootu) ----
-        if text_lower in ("rules_chit", "rules_kootu"):
-            sess = _bot_sessions.get(from_number, {})
-            cf = sess.get("chitFile", "")
-            chit_name = sess.get("chitName", "")
-            info = gs_get_chit_number(cf)
-
-            total = int(float(str(info.get("totalAmount", 100000)).replace(",", "")))
-
-            # Count members
-            try:
-                all_members = get_all_members(cf)
-                members_count = len(all_members) if all_members else 20
-            except Exception:
-                members_count = 20
-
-            # Duration = members + 1 (1st month for company)
-            duration = members_count + 1
-
-            per_person = math.ceil(total / members_count) if members_count > 0 else 0
-
-            if text_lower == "rules_chit":
-                rules = _generate_chit_rules(total, members_count, duration, per_person)
-            else:
-                rules = _generate_kootu_rules(total, members_count, duration, per_person)
-
-            # WhatsApp has 4096 char limit, split if needed
-            if len(rules) > 4000:
-                mid = rules.find("━━━━━━━━━━━━━━━━━━", len(rules) // 3)
-                if mid > 0:
-                    send_whatsapp_message(from_number, rules[:mid])
-                    send_whatsapp_message(from_number, rules[mid:])
-                else:
-                    send_whatsapp_message(from_number, rules[:4000])
-                    send_whatsapp_message(from_number, rules[4000:])
-            else:
-                send_whatsapp_message(from_number, rules)
-
-            _bot_sessions[from_number]["step"] = "ready"
-            _send_command_menu(from_number, f"📜 {chit_name}", "What would you like to do next?")
             return
 
         # ---- STEP: Update flow - name selected, ask for chit amount ----
@@ -1603,10 +1450,6 @@ def _handle_bot_message(from_number, text):
 
         if text_lower in ("tomorrow", "chit tomorrow", "tmrw", "tmr"):
             _handle_bot_message(from_number, "cmd_tomorrow")
-            return
-
-        if text_lower in ("rules", "rule", "chit rules", "generate rules"):
-            _handle_bot_message(from_number, "cmd_rules")
             return
 
         # ---- NAME SEARCH ----
