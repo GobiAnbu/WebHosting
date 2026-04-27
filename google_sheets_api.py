@@ -243,8 +243,78 @@ def get_chit_view_data(spreadsheet_name, force_refresh=False):
 
 # ==================== PARALLEL BACKGROUND REFRESH ====================
 
+def fetch_all_files_bulk():
+    """Fetch ALL chit files data in ONE API call. Returns {files: {filename: data}, folders: [...]}."""
+    try:
+        resp = requests.get(_get_url(), params=_params("getAllFilesData"), timeout=90)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data or "files" not in data:
+            print("[Cache] ⚠️ Bulk fetch returned empty/invalid data")
+            return None
+        return data
+    except Exception as e:
+        print(f"[Cache] ❌ Bulk fetch failed: {e}")
+        return None
+
 def refresh_all_files():
-    """Refresh all chit files in parallel using thread pool."""
+    """Refresh all chit files — tries bulk (1 call) first, falls back to parallel individual calls."""
+    bulk = fetch_all_files_bulk()
+    if bulk and bulk.get("files"):
+        # Cache folders
+        folders = bulk.get("folders", [])
+        if folders:
+            _set_cache("chit_folders", folders)
+            # Cache folder→files mapping
+            folder_files = {}  # folder_name → [file_names]
+            for fn in bulk["files"]:
+                # We don't know which folder each file belongs to from the bulk response,
+                # so we cache alldata and viewdata per file directly
+                pass
+
+        file_count = 0
+        for file_name, file_data in bulk["files"].items():
+            if isinstance(file_data, dict) and "error" not in file_data:
+                # Cache as alldata (members, chitNumber, etc.)
+                alldata = {
+                    "members": file_data.get("members", []),
+                    "activeMembers": file_data.get("activeMembers", []),
+                    "chitNumber": file_data.get("chitNumber", ""),
+                    "chitRemaining": file_data.get("chitRemaining", 0),
+                    "amountPerPerson": file_data.get("amountPerPerson", 0),
+                    "totalAmount": file_data.get("totalAmount", 0),
+                    "chitName": file_data.get("chitName", ""),
+                    "gpay": file_data.get("gpay", ""),
+                    "contactNumber": file_data.get("contactNumber", ""),
+                    "conducted": file_data.get("conducted", ""),
+                    "balanceChit": file_data.get("balanceChit", ""),
+                }
+                _set_cache(f"alldata_{file_name}", alldata)
+
+                # Cache as viewdata (chitDetails, chitNumberRows, etc.)
+                viewdata = {
+                    "chitDetails": file_data.get("chitDetails", {}),
+                    "chitNumberRows": file_data.get("chitNumberRows", []),
+                    "chitNumberHeaders": file_data.get("chitNumberHeaders", []),
+                    "chitMembers": file_data.get("chitMembers", []),
+                    "chitMemberHeaders": file_data.get("chitMemberHeaders", []),
+                    "members": file_data.get("members", []),
+                }
+                _set_cache(f"viewdata_{file_name}", viewdata)
+                file_count += 1
+            else:
+                err = file_data.get("error", "unknown") if isinstance(file_data, dict) else "invalid"
+                print(f"[Cache] ⚠️ Bulk: {file_name} had error: {err}")
+
+        print(f"[Cache] ✅ Bulk refresh: {file_count} files cached in 1 API call")
+        return
+
+    # Fallback: individual parallel calls (if bulk fails or Apps Script not updated yet)
+    print("[Cache] ⚠️ Bulk failed, falling back to individual file refresh...")
+    _refresh_all_files_individual()
+
+def _refresh_all_files_individual():
+    """Fallback: refresh all chit files with individual parallel calls."""
     try:
         folders = get_chit_folders()
         all_files = []
