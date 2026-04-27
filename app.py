@@ -322,33 +322,6 @@ def health_check():
         "apps_script_key_set": bool(os.environ.get("APPS_SCRIPT_API_KEY", "")),
     }), 200
 
-@app.route("/debug-phone")
-def debug_phone():
-    """Debug endpoint: show how a phone number maps to chits."""
-    phone = request.args.get("phone", "")
-    if not phone:
-        # Show full contact map
-        return jsonify({
-            "contact_map": {k: v for k, v in _contact_chit_cache.get("data", {}).items()},
-            "total_phones": len(_contact_chit_cache.get("data", {})),
-        })
-    clean = _normalize_phone(phone)
-    matched = _contact_chit_cache.get("data", {}).get(clean, [])
-    # Also show all contactNumbers from cached data for comparison
-    all_cached = get_all_cached_alldata()
-    file_contacts = {}
-    for cf, data in all_cached.items():
-        if isinstance(data, dict):
-            raw = data.get("contactNumber", "")
-            normalized = _normalize_phone(raw) if raw else ""
-            file_contacts[cf] = {"raw": raw, "normalized": normalized, "chitName": data.get("chitName", "")}
-    return jsonify({
-        "input_phone": phone,
-        "normalized": clean,
-        "matched_chits": matched,
-        "all_file_contacts": file_contacts,
-    })
-
 # ==================== AUTH ROUTES ====================
 
 @app.route("/login-page")
@@ -877,19 +850,17 @@ _CONTACT_CACHE_TTL = 900  # 15 minutes — matches background refresh interval
 _cache_ready = False  # True once first full cache build completes
 
 def _normalize_phone(phone):
-    """Strip +, leading 0, country code 91, handle floats/scientific notation and non-digit chars."""
+    """Strip +, leading 0, country code 91, handle floats and non-digit chars."""
     p = str(phone).strip().replace(" ", "")
-    # Handle scientific notation and float numbers from Google Sheets (e.g. 9.87654321E9, 9876543210.0)
-    try:
-        # Try parsing as float first to handle scientific notation
-        f = float(p)
-        if f > 1000000000:  # Looks like a phone number
-            p = str(int(f))
-    except (ValueError, OverflowError):
-        pass
+    # Handle float numbers from Google Sheets (e.g. 9876543210.0)
+    if "." in p:
+        try:
+            p = str(int(float(p)))
+        except (ValueError, OverflowError):
+            pass
     # Remove all non-digit characters
     p = ''.join(c for c in p if c.isdigit())
-    # Strip country code 91 if present (only if resulting number is 10+ digits)
+    # Strip country code 91 if present
     if p.startswith("91") and len(p) > 10:
         p = p[2:]
     # Strip leading zeros
@@ -950,13 +921,8 @@ def _build_contact_chit_map():
                     mapping[clean] = []
                 if not any(e["file"] == cf and e["role"] == "owner" for e in mapping[clean]):
                     mapping[clean].append({"file": cf, "chitName": chit_name, "role": "owner"})
-            elif clean:
-                print(f"[ContactMap] ⚠️ {cf}: contactNumber part '{cp}' normalized to '{clean}' (too short, skipped)")
 
-        if not owner_phones:
-            print(f"[ContactMap] ⚠️ {cf} → contactNumber='{contact_raw}' → NO valid owner phones found!")
-        else:
-            print(f"[ContactMap] {cf} → contactNumber='{contact_raw}' → owners={owner_phones}")
+        print(f"[ContactMap] {cf} → contactNumber='{contact_raw}' → owners={owner_phones}")
 
         # Map members (MobileNumber from chitMembers)
         members = data.get("members", [])
