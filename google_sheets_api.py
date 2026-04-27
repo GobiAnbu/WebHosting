@@ -189,8 +189,12 @@ def get_chit_folders():
         return cached
     resp = requests.get(_get_url(), params=_params("getChitFolders"), timeout=30)
     data = resp.json()
-    _set_cache("chit_folders", data)
-    return data
+    if isinstance(data, list):
+        _set_cache("chit_folders", data)
+        return data
+    else:
+        print(f"[Cache] ⚠️ getChitFolders returned non-list: {data}")
+        return []
 
 def get_chit_files(folder_name=None):
     """Get list of spreadsheet names from a folder inside chitData."""
@@ -203,8 +207,13 @@ def get_chit_files(folder_name=None):
         params["folder"] = folder_name
     resp = requests.get(_get_url(), params=params, timeout=30)
     data = resp.json()
-    _set_cache(cache_key, data)
-    return data
+    # Only cache if we got a valid list (not an error dict)
+    if isinstance(data, list):
+        _set_cache(cache_key, data)
+        return data
+    else:
+        print(f"[Cache] ⚠️ getChitFiles returned non-list: {data}")
+        return []
 
 def get_all_chit_data(spreadsheet_name, force_refresh=False):
     """Get ALL data for a chit file in one API call (cached)."""
