@@ -875,26 +875,34 @@ def _build_contact_chit_map():
     # Get all cached file data — no API calls, just reads from memory
     all_cached = get_all_cached_alldata()
 
-    if not all_cached:
-        # Cache is empty — fall back to API calls as last resort
-        print("[ContactMap] ⚠️ No cached data found, falling back to API calls...")
-        all_files = []
-        try:
-            folders = gs_get_chit_folders()
-            for folder in folders:
-                files = gs_get_chit_files(folder)
-                all_files.extend(files)
-        except Exception as e:
-            print(f"[ContactMap] ❌ Failed to get folders/files: {e}")
-            return mapping
+    # Also get the known file list to detect missing files
+    known_files = set()
+    try:
+        folders = gs_get_chit_folders()
+        for folder in folders:
+            files = gs_get_chit_files(folder)
+            known_files.update(files)
+    except Exception as e:
+        print(f"[ContactMap] ⚠️ Could not get file list: {e}")
 
-        for cf in all_files:
+    # Find files that are known but not in cache (failed due to Drive errors etc.)
+    missing_files = known_files - set(all_cached.keys())
+    if missing_files:
+        print(f"[ContactMap] ⚠️ {len(missing_files)} files missing from cache: {missing_files}. Fetching...")
+        for cf in missing_files:
             try:
-                data = get_all_chit_data(cf)
-                if data:
+                data = get_all_chit_data(cf, force_refresh=True)
+                if data and isinstance(data, dict) and "error" not in data:
                     all_cached[cf] = data
+                    print(f"[ContactMap] ✅ Fetched missing file: {cf}")
+                else:
+                    print(f"[ContactMap] ❌ Could not fetch {cf}: {data}")
             except Exception as e:
                 print(f"[ContactMap] ❌ Failed to fetch {cf}: {e}")
+
+    if not all_cached:
+        print("[ContactMap] ⚠️ No cached data found at all!")
+        return mapping
 
     print(f"[ContactMap] Building map from {len(all_cached)} cached files...")
 

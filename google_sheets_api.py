@@ -57,35 +57,54 @@ def _bg_refresh_key(key):
         with _cache_lock:
             _refreshing_keys.discard(key)
 
-def _fetch_and_cache(action, file_name, cache_key):
-    """Fetch from Apps Script and store in cache."""
-    try:
-        resp = requests.get(_get_url(), params=_params(action, file=file_name), timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        # Don't cache error responses as valid data
-        if isinstance(data, dict) and "error" in data:
-            print(f"[Cache] ⚠️ API returned error for {action} on {file_name}: {data.get('error')}")
+def _fetch_and_cache(action, file_name, cache_key, retries=3):
+    """Fetch from Apps Script and store in cache. Retries on transient errors."""
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(_get_url(), params=_params(action, file=file_name), timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            # Don't cache error responses as valid data
+            if isinstance(data, dict) and "error" in data:
+                err_msg = data.get("error", "")
+                # Retry on transient Drive/service errors
+                if "Service error" in err_msg or "Drive" in err_msg or "Timeout" in err_msg:
+                    print(f"[Cache] ⚠️ Attempt {attempt}/{retries} - {action} on {file_name}: {err_msg}")
+                    last_error = err_msg
+                    if attempt < retries:
+                        time.sleep(2 * attempt)  # Backoff: 2s, 4s
+                        continue
+                    # All retries exhausted — return stale cache
+                    print(f"[Cache] ❌ All {retries} attempts failed for {action} on {file_name}: {err_msg}")
+                    cached = _get_cached(cache_key, allow_stale=True)
+                    return cached if cached is not None else {}
+                # Non-transient error — don't retry
+                print(f"[Cache] ⚠️ API returned error for {action} on {file_name}: {err_msg}")
+                cached = _get_cached(cache_key, allow_stale=True)
+                return cached if cached is not None else {}
+            if data:  # Only cache non-empty responses
+                # Debug: log contactNumber for alldata fetches
+                if action == "getAllChitData" and isinstance(data, dict):
+                    print(f"[Cache] 📥 {file_name}: contactNumber='{data.get('contactNumber', '')}', chitName='{data.get('chitName', '')}', members={len(data.get('members', []))}")
+                _set_cache(cache_key, data)
+                return data
+            else:
+                print(f"[Cache] ⚠️ Empty response for {action} on {file_name}")
+                cached = _get_cached(cache_key, allow_stale=True)
+                return cached if cached is not None else data
+        except Exception as e:
+            last_error = str(e)
+            print(f"[Cache] ⚠️ Attempt {attempt}/{retries} - Fetch failed for {action} on {file_name}: {e}")
+            if attempt < retries:
+                time.sleep(2 * attempt)
+                continue
+            # All retries exhausted
+            print(f"[Cache] ❌ All {retries} attempts failed for {action} on {file_name}: {e}")
             cached = _get_cached(cache_key, allow_stale=True)
-            return cached if cached is not None else {}
-        if data:  # Only cache non-empty responses
-            # Debug: log contactNumber for alldata fetches
-            if action == "getAllChitData" and isinstance(data, dict):
-                print(f"[Cache] 📥 {file_name}: contactNumber='{data.get('contactNumber', '')}', chitName='{data.get('chitName', '')}', members={len(data.get('members', []))}")
-            _set_cache(cache_key, data)
-            return data
-        else:
-            print(f"[Cache] ⚠️ Empty response for {action} on {file_name}")
-            # Return existing cache if available
-            cached = _get_cached(cache_key, allow_stale=True)
-            return cached if cached is not None else data
-    except Exception as e:
-        print(f"[Cache] ❌ Fetch failed for {action} on {file_name}: {e}")
-        # Return existing stale cache if available rather than failing
-        cached = _get_cached(cache_key, allow_stale=True)
-        if cached is not None:
-            return cached
-        raise
+            if cached is not None:
+                return cached
+            raise
 
 def _set_cache(key, data):
     with _cache_lock:
