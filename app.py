@@ -334,6 +334,11 @@ def settings():
 def chit_view():
     return render_template("chit_view.html")
 
+@app.route("/chit-rules")
+@login_required
+def chit_rules():
+    return render_template("chit_rules.html")
+
 # ==================== CHIT DATA API ROUTES ====================
 
 @app.route("/get-chit-files")

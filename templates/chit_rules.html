@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chit Rules Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #0f2027, #203a43, #2c5364); min-height: 100vh; padding: 30px 20px; }
+        .back-btn { position: fixed; top: 20px; left: 20px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 10px; cursor: pointer; font-size: 0.9rem; text-decoration: none; transition: background 0.2s; z-index: 100; }
+        .back-btn:hover { background: rgba(255,255,255,0.2); }
+
+        .user-profile { position: fixed; top: 20px; right: 20px; z-index: 200; }
+        .user-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #00b4d8, #0077b6); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.3s; box-shadow: 0 2px 12px rgba(0,180,216,0.35); border: 2px solid rgba(255,255,255,0.15); }
+        .user-avatar:hover { transform: scale(1.1); }
+        .user-dropdown { position: absolute; top: 54px; right: 0; background: rgba(12,20,33,0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; min-width: 270px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); overflow: hidden; opacity: 0; transform: translateY(-8px); pointer-events: none; transition: all 0.2s ease; }
+        .user-dropdown.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+        .user-dropdown-header { display: flex; align-items: center; gap: 14px; padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .user-dropdown-avatar-wrap { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #00b4d8, #0077b6); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.2rem; font-weight: 700; flex-shrink: 0; }
+        .user-dropdown-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .user-dropdown-name { color: #fff; font-size: 1rem; font-weight: 600; }
+        .user-dropdown-role { display: inline-block; width: fit-content; padding: 2px 10px; border-radius: 999px; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; }
+        .ud-role-admin { background: rgba(255,82,82,0.12); color: #ff6b6b; }
+        .ud-role-user { background: rgba(0,180,216,0.12); color: #00b4d8; }
+        .user-dropdown-menu { padding: 8px; }
+        .user-dropdown-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; background: none; border: none; border-radius: 10px; color: rgba(255,255,255,0.7); font-size: 0.85rem; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; text-decoration: none; transition: all 0.15s; }
+        .user-dropdown-link:hover { background: rgba(255,255,255,0.07); color: #fff; }
+        .user-dropdown-logout { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; background: none; border: none; border-radius: 10px; color: #ff6b6b; font-size: 0.85rem; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; text-decoration: none; transition: all 0.15s; }
+        .user-dropdown-logout:hover { background: rgba(255,82,82,0.1); }
+
+        .header { text-align: center; margin-bottom: 32px; max-width: 700px; margin-left: auto; margin-right: auto; }
+        .header .pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,180,216,0.15); color: #00b4d8; padding: 6px 16px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; margin-bottom: 12px; }
+        .header h1 { color: #fff; font-size: 2rem; font-weight: 700; margin-bottom: 6px; }
+        .header p { color: rgba(255,255,255,0.5); font-size: 0.95rem; }
+
+        .container { max-width: 700px; margin: auto; display: flex; flex-direction: column; gap: 20px; }
+
+        .card { background: rgba(255,255,255,0.05); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 24px; }
+        .card-title { color: #fff; font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; }
+
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; color: rgba(255,255,255,0.6); font-size: 0.82rem; font-weight: 500; margin-bottom: 6px; }
+        .form-input, .form-select { width: 100%; padding: 12px 14px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; color: #fff; font-size: 0.88rem; outline: none; font-family: 'Inter', sans-serif; transition: border 0.2s; }
+        .form-input:focus, .form-select:focus { border-color: #00b4d8; }
+        .form-select option { background: #1a2a3a; color: #fff; }
+        .form-input::placeholder { color: rgba(255,255,255,0.25); }
+
+        .form-row { display: flex; gap: 16px; }
+        .form-row .form-group { flex: 1; }
+
+        /* Chit Type Selector */
+        .type-selector { display: flex; gap: 12px; margin-bottom: 20px; }
+        .type-btn {
+            flex: 1; padding: 16px; border-radius: 14px; border: 2px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.04); cursor: pointer; transition: all 0.3s; text-align: center;
+        }
+        .type-btn:hover { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); }
+        .type-btn.active { border-color: #00b4d8; background: rgba(0,180,216,0.12); }
+        .type-btn-icon { font-size: 2rem; margin-bottom: 6px; }
+        .type-btn-label { color: #fff; font-size: 0.92rem; font-weight: 600; }
+        .type-btn-desc { color: rgba(255,255,255,0.4); font-size: 0.72rem; margin-top: 4px; }
+
+        /* Preview */
+        .preview-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; }
+        .preview-text { color: rgba(255,255,255,0.85); font-size: 0.88rem; line-height: 1.8; white-space: pre-wrap; word-wrap: break-word; }
+
+        .btn-generate {
+            width: 100%; padding: 14px; border: none; border-radius: 12px;
+            font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #00b4d8, #0077b6); color: #fff;
+        }
+        .btn-generate:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,180,216,0.3); }
+
+        .btn-copy {
+            width: 100%; padding: 12px; margin-top: 12px; border: 1px solid rgba(37,211,102,0.3);
+            border-radius: 12px; background: rgba(37,211,102,0.15); color: #25D366;
+            font-size: 0.88rem; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif;
+            transition: all 0.2s;
+        }
+        .btn-copy:hover { background: rgba(37,211,102,0.25); }
+
+        .copy-toast {
+            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+            background: #25D366; color: #fff; padding: 10px 24px; border-radius: 12px;
+            font-size: 0.88rem; font-weight: 600; box-shadow: 0 4px 20px rgba(37,211,102,0.4);
+            opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 9999;
+        }
+        .copy-toast.show { opacity: 1; }
+
+        /* Bid table */
+        .bid-table-wrap { margin-top: 12px; max-height: 300px; overflow-y: auto; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); }
+        .bid-table { width: 100%; border-collapse: collapse; }
+        .bid-table th { background: rgba(0,180,216,0.15); color: #00b4d8; padding: 8px 12px; font-size: 0.78rem; text-align: left; font-weight: 600; position: sticky; top: 0; }
+        .bid-table td { padding: 8px 12px; color: rgba(255,255,255,0.7); font-size: 0.82rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .bid-table tr:hover td { background: rgba(255,255,255,0.03); }
+        .bid-table input {
+            width: 100%; padding: 6px 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 6px; color: #fff; font-size: 0.82rem; font-family: 'Inter', sans-serif; outline: none;
+        }
+        .bid-table input:focus { border-color: #00b4d8; }
+
+        .btn-add-row { padding: 8px 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; color: rgba(255,255,255,0.6); font-size: 0.8rem; cursor: pointer; font-family: 'Inter', sans-serif; margin-top: 8px; transition: all 0.2s; }
+        .btn-add-row:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+        @media (max-width: 600px) {
+            .back-btn { position: static; display: inline-block; margin-bottom: 16px; }
+            .header h1 { font-size: 1.5rem; }
+            body { padding: 16px 12px; }
+            .form-row { flex-direction: column; gap: 0; }
+            .type-selector { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+<script>if (!sessionStorage.getItem("loggedIn")) { window.location.href = "/logout"; }</script>
+<a class="back-btn" href="/">🏠 Home</a>
+
+<div class="user-profile">
+    <div class="user-avatar" id="userAvatar" onclick="document.getElementById('userDropdown').classList.toggle('show')">?</div>
+    <div class="user-dropdown" id="userDropdown">
+        <div class="user-dropdown-header">
+            <div class="user-dropdown-avatar-wrap" id="userAvatarLarge">?</div>
+            <div class="user-dropdown-info">
+                <div class="user-dropdown-name" id="userName">—</div>
+                <span class="user-dropdown-role ud-role-user" id="userRole">user</span>
+            </div>
+        </div>
+        <div class="user-dropdown-menu">
+            <a href="/" class="user-dropdown-link">🏠 Home</a>
+            <a href="/logout" class="user-dropdown-logout" onclick="sessionStorage.clear()">🚪 Logout</a>
+        </div>
+    </div>
+</div>
+
+<div class="header">
+    <div class="pill">📜 RULES GENERATOR</div>
+    <h1>Chit / Kootu Rules Generator</h1>
+    <p>Configure your chit type and generate rules in English & Tamil</p>
+</div>
+
+<div class="container">
+    <!-- Chit Type Selection -->
+    <div class="card">
+        <div class="card-title">📌 Select Type</div>
+        <div class="type-selector">
+            <div class="type-btn active" id="typeChit" onclick="selectType('chit')">
+                <div class="type-btn-icon">💰</div>
+                <div class="type-btn-label">Chit Fund</div>
+                <div class="type-btn-desc">With bidding system</div>
+            </div>
+            <div class="type-btn" id="typeKootu" onclick="selectType('kootu')">
+                <div class="type-btn-icon">🤝</div>
+                <div class="type-btn-label">Kootu</div>
+                <div class="type-btn-desc">Lucky draw only</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration -->
+    <div class="card">
+        <div class="card-title">⚙️ Configuration</div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Total Amount (₹)</label>
+                <input class="form-input" id="totalAmount" type="number" value="100000" placeholder="e.g. 100000">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Total Members</label>
+                <input class="form-input" id="totalMembers" type="number" value="20" placeholder="e.g. 20">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Duration (months)</label>
+                <input class="form-input" id="duration" type="number" value="21" placeholder="e.g. 21">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Chit Day (of month)</label>
+                <input class="form-input" id="chitDay" type="number" value="5" placeholder="e.g. 5">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Payment Due Date (of month)</label>
+                <input class="form-input" id="dueDay" type="number" value="15" placeholder="e.g. 15">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Disbursement Days</label>
+                <input class="form-input" id="disburse" type="text" value="1–2" placeholder="e.g. 1–2">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">🔄 Frequency (months)</label>
+                <select class="form-select" id="frequency">
+                    <option value="1" selected>Every month</option>
+                    <option value="2">Once in 2 months</option>
+                    <option value="3">Once in 3 months</option>
+                    <option value="4">Once in 4 months</option>
+                    <option value="6">Once in 6 months</option>
+                </select>
+            </div>
+            <div class="form-group"></div>
+        </div>
+
+        <!-- Interest Based (Chit Fund only) -->
+        <div id="interestSection">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">📈 Interest Based Bidding</label>
+                    <select class="form-select" id="interestEnabled" onchange="toggleInterest()">
+                        <option value="no" selected>No</option>
+                        <option value="yes">Yes</option>
+                    </select>
+                </div>
+                <div class="form-group" id="interestRateGroup" style="display:none;">
+                    <label class="form-label">💹 Interest Rate (%)</label>
+                    <input class="form-input" id="interestRate" type="number" value="2" step="0.1" placeholder="e.g. 2">
+                </div>
+            </div>
+        </div>
+
+        <!-- Commission (Kootu only) -->
+        <div id="commissionSection" style="display:none;">
+            <div class="form-group">
+                <label class="form-label">💼 Commission Amount (₹)</label>
+                <input class="form-input" id="commission" type="number" value="2000" placeholder="e.g. 2000">
+            </div>
+        </div>
+
+        <!-- Bid Table (Chit Fund only, shown when interest enabled) -->
+        <div id="bidSection" style="display:none;">
+            <div class="form-group" style="margin-top:8px;">
+                <label class="form-label">📊 Monthly Bid Starting Amount Table</label>
+                <div class="bid-table-wrap">
+                    <table class="bid-table" id="bidTable">
+                        <thead><tr><th>Month</th><th>Bid Starting Amount (₹)</th></tr></thead>
+                        <tbody id="bidTableBody"></tbody>
+                    </table>
+                </div>
+                <button class="btn-add-row" onclick="addBidRow()">+ Add Month</button>
+            </div>
+        </div>
+
+        <button class="btn-generate" onclick="generateRules()" style="margin-top:8px;">📜 Generate Rules</button>
+    </div>
+
+    <!-- Preview -->
+    <div class="card" id="previewCard" style="display:none;">
+        <div class="card-title">📋 Generated Rules</div>
+        <div class="preview-card">
+            <div class="preview-text" id="rulesPreview"></div>
+        </div>
+        <button class="btn-copy" onclick="copyRules()">📋 Copy Rules</button>
+    </div>
+</div>
+
+<div class="copy-toast" id="copyToast">✅ Copied to clipboard!</div>
+
+<script>
+    let selectedType = 'chit';
+
+    function selectType(type) {
+        selectedType = type;
+        document.getElementById('typeChit').classList.toggle('active', type === 'chit');
+        document.getElementById('typeKootu').classList.toggle('active', type === 'kootu');
+        document.getElementById('bidSection').style.display = (type === 'chit' && document.getElementById('interestEnabled').value === 'yes') ? '' : 'none';
+        document.getElementById('commissionSection').style.display = type === 'kootu' ? '' : 'none';
+        document.getElementById('interestSection').style.display = type === 'chit' ? '' : 'none';
+        // Adjust duration default
+        if (type === 'kootu') {
+            document.getElementById('duration').value = document.getElementById('totalMembers').value;
+        }
+    }
+
+    function toggleInterest() {
+        const enabled = document.getElementById('interestEnabled').value === 'yes';
+        document.getElementById('interestRateGroup').style.display = enabled ? '' : 'none';
+        document.getElementById('bidSection').style.display = enabled ? '' : 'none';
+        if (enabled) initBidTable();
+    }
+
+    // Initialize bid table
+    function initBidTable() {
+        const tbody = document.getElementById('bidTableBody');
+        tbody.innerHTML = '';
+        const duration = parseInt(document.getElementById('duration').value) || 21;
+        const total = parseInt(document.getElementById('totalAmount').value) || 100000;
+        const interestRate = parseFloat(document.getElementById('interestRate').value) || 2;
+
+        for (let i = 1; i <= duration; i++) {
+            const row = document.createElement('tr');
+            let bidVal = 0;
+            let label = '';
+            if (i === 1) {
+                bidVal = total;
+                label = ' (Company)';
+            } else {
+                // Formula: chitAmount * interest * remainingMonth / 100
+                const remaining = duration - i;
+                bidVal = Math.round(total * interestRate * remaining / 100);
+            }
+            row.innerHTML = `<td style="width:80px; font-weight:600;">${i}${label}</td><td><input type="number" value="${bidVal}" data-month="${i}" readonly style="opacity:0.7; cursor:not-allowed;"></td>`;
+            tbody.appendChild(row);
+        }
+    }
+
+    // Re-init when duration/amount/interest changes
+    document.getElementById('duration').addEventListener('change', initBidTable);
+    document.getElementById('totalAmount').addEventListener('change', initBidTable);
+    document.getElementById('interestRate').addEventListener('input', initBidTable);
+    document.getElementById('totalMembers').addEventListener('change', function() {
+        if (selectedType === 'kootu') {
+            document.getElementById('duration').value = this.value;
+        }
+    });
+
+    function addBidRow() {
+        const tbody = document.getElementById('bidTableBody');
+        const nextMonth = tbody.rows.length + 1;
+        const row = document.createElement('tr');
+        row.innerHTML = `<td style="width:80px; font-weight:600;">${nextMonth}</td><td><input type="number" value="0" data-month="${nextMonth}"></td>`;
+        tbody.appendChild(row);
+    }
+
+    function formatCurrency(num) {
+        return num.toLocaleString('en-IN');
+    }
+
+    function getOrdinal(n) {
+        const s = ["th","st","nd","rd"];
+        const v = n % 100;
+        return n + (s[(v-20)%10] || s[v] || s[0]);
+    }
+
+    function generateRules() {
+        const total = parseInt(document.getElementById('totalAmount').value) || 100000;
+        const members = parseInt(document.getElementById('totalMembers').value) || 20;
+        const duration = parseInt(document.getElementById('duration').value) || 21;
+        const chitDay = parseInt(document.getElementById('chitDay').value) || 5;
+        const dueDay = parseInt(document.getElementById('dueDay').value) || 15;
+        const disburse = document.getElementById('disburse').value || '1–2';
+        const perPerson = Math.ceil(total / members);
+        const freq = parseInt(document.getElementById('frequency').value) || 1;
+
+        // Build frequency text
+        let freqEn, freqTa;
+        if (freq === 1) {
+            freqEn = 'every month';
+            freqTa = 'ஒவ்வொரு மாதமும்';
+        } else {
+            freqEn = `once in ${freq} months`;
+            freqTa = `${freq} மாதங்களுக்கு ஒருமுறை`;
+        }
+
+        let rules = '';
+
+        if (selectedType === 'chit') {
+            const isInterest = document.getElementById('interestEnabled').value === 'yes';
+            const interestRate = parseFloat(document.getElementById('interestRate').value) || 2;
+            let exampleMonth = 5;
+            let exampleBid = 0;
+            let exRemaining = duration - exampleMonth;
+            let bidTableText = '';
+            let formulaEn = '';
+            let formulaTa = '';
+
+            if (isInterest) {
+                // Get bid table data for example
+                const bidInputs = document.querySelectorAll('#bidTableBody input');
+                if (bidInputs.length >= exampleMonth) {
+                    exampleBid = parseInt(bidInputs[exampleMonth - 1].value) || 0;
+                }
+
+                // Build bid table text - WhatsApp friendly
+                bidTableText = '\n\n📊 *Monthly Bid Starting Amount:*\n\n';
+                bidInputs.forEach((input, idx) => {
+                    const month = idx + 1;
+                    const amt = formatCurrency(parseInt(input.value) || 0);
+                    if (idx === 0) {
+                        bidTableText += `▪️ Month ${month}: ₹${amt} _(Company)_\n`;
+                    } else {
+                        bidTableText += `▪️ Month ${month}: ₹${amt}\n`;
+                    }
+                });
+
+                formulaEn = `\n\n📈 *Bid Calculation:*\n👉 _Formula:_ Chit Amount × Interest (${interestRate}%) × Remaining Months ÷ 100\n👉 _Example (Month ${exampleMonth}):_ ${formatCurrency(total)} × ${interestRate} × ${exRemaining} ÷ 100 = *₹${formatCurrency(exampleBid)}*`;
+                formulaTa = `\n\n📈 *ஏலக் கணக்கீடு:*\n👉 _சூத்திரம்:_ சிட்டு தொகை × வட்டி (${interestRate}%) × மீதமுள்ள மாதங்கள் ÷ 100\n👉 _உதாரணம் (${exampleMonth}ஆம் மாதம்):_ ${formatCurrency(total)} × ${interestRate} × ${exRemaining} ÷ 100 = *₹${formatCurrency(exampleBid)}*`;
+            }
+
+            const exampleResult = total - exampleBid;
+
+            rules = `📢 *Chit Fund Rules*
+━━━━━━━━━━━━━━━━━━
+
+1️⃣ Total Duration: *${duration} months* | Total Members: *${members}*
+
+2️⃣ Total Chit Amount: *₹${formatCurrency(total)}*
+👉 Monthly payment per person: Up to *₹${formatCurrency(perPerson)}* (may reduce based on bidding)
+
+3️⃣ First month chit amount will be taken by the company. From the 2nd month onwards, bidding will be conducted.
+
+4️⃣ Chit auction will be held on the *${getOrdinal(chitDay)}* of *${freqEn}*.
+
+5️⃣ Members must pay the chit amount on or before the *${getOrdinal(dueDay)}* of every month.
+
+6️⃣ The chit amount will be given to the winner within *${disburse} days*.
+
+7️⃣ ${isInterest ? 'Bidding should start from the amount mentioned in the table for that respective month.' : 'Members who want to take the chit must participate in the bidding process.'}${formulaEn}
+${isInterest ? '\n8️⃣ Members who want to take the chit must bid from the specified amount.\n' : ''}
+${isInterest ? '9️⃣' : '8️⃣'} The member who agrees to the lowest bid will win that month\'s chit.
+
+${isInterest ? '🔟' : '9️⃣'} If no one bids, a lucky draw will be conducted.
+👉 Winner receives: Total chit amount – Current month bid amount
+👉 _Example (Month ${exampleMonth}):_ ${formatCurrency(total)} – ${formatCurrency(exampleBid)} = *₹${formatCurrency(exampleResult)}*
+${bidTableText}
+━━━━━━━━━━━━━━━━━━
+
+📢 *சிட்டு விதிமுறைகள்*
+━━━━━━━━━━━━━━━━━━
+
+1️⃣ மொத்த காலம்: *${duration} மாதங்கள்* | மொத்த உறுப்பினர்கள்: *${members}*
+
+2️⃣ மொத்த சிட்டு தொகை: *₹${formatCurrency(total)}*
+👉 மாதாந்திர கட்டணம் (ஒருவருக்கு): அதிகபட்சம் *₹${formatCurrency(perPerson)}* (ஏல போட்டி இருந்தால் குறையலாம்)
+
+3️⃣ முதல் மாத சிட்டு தொகையை நிறுவனம் எடுத்துக்கொள்ளும். அதன் பிறகு ஏலம் நடைபெறும்.
+
+4️⃣ *${freqTa}* ${chitDay}ஆம் தேதி சிட்டு ஏலம் நடைபெறும்.
+
+5️⃣ உறுப்பினர்கள் ஒவ்வொரு மாதமும் *${dueDay}ஆம்* தேதிக்குள் தொகையை செலுத்த வேண்டும்.
+
+6️⃣ சிட்டு எடுத்தவருக்கு தொகை *${disburse} நாட்களுக்குள்* வழங்கப்படும்.
+
+7️⃣ ${isInterest ? 'அந்த மாதத்திற்கான அட்டவணையில் குறிப்பிடப்பட்ட தொகையிலிருந்து ஏலம் தொடங்க வேண்டும்.' : 'சிட்டு எடுக்க விரும்புபவர்கள் ஏலத்தில் பங்கேற்க வேண்டும்.'}${formulaTa}
+${isInterest ? '\n8️⃣ சிட்டு எடுக்க விரும்புவோர் அட்டவணையில் உள்ள தொகையிலிருந்து ஏலம் விட வேண்டும்.\n' : ''}
+${isInterest ? '9️⃣' : '8️⃣'} குறைந்த தொகைக்கு சம்மதிக்கும் நபரே அந்த மாத சிட்டு பெறுவார்.
+
+${isInterest ? '🔟' : '9️⃣'} யாரும் ஏலம் விடவில்லை என்றால் லக்கி டிரா நடத்தப்படும்.
+👉 லக்கி டிரா தொகை = மொத்த சிட்டு தொகை – அந்த மாத ஏலம் தொகை
+👉 _உதாரணம் (${exampleMonth}ஆம் மாதம்):_ ${formatCurrency(total)} – ${formatCurrency(exampleBid)} = *₹${formatCurrency(exampleResult)}*
+
+📌 For more details, feel free to contact.
+📌 மேலும் விவரங்களுக்கு தொடர்பு கொள்ளவும்.`;
+
+        } else {
+            // Kootu rules
+            const commission = parseInt(document.getElementById('commission').value) || 2000;
+            const kootuPayout = total - commission;
+            rules = `📢 *Kootu Rules*
+━━━━━━━━━━━━━━━━━━
+
+1️⃣ The kootu duration is *${duration} months* with *${members} members* (each member will receive the amount once).
+
+2️⃣ The total monthly collection will be *₹${formatCurrency(total)}*, and each member must contribute *₹${formatCurrency(perPerson)}* per month.
+
+3️⃣ The kootu will be conducted on the *${getOrdinal(chitDay)}* of *${freqEn}*.
+
+4️⃣ Members must pay their monthly contribution on or before the *${getOrdinal(dueDay)}* of every month.
+
+5️⃣ ${freq === 1 ? 'Every month' : 'Every ' + freq + ' months'}, one member will receive the collected amount after deducting the commission.
+
+6️⃣ A commission of *₹${formatCurrency(commission)}* will be deducted from the total amount.
+👉 Member will receive: *₹${formatCurrency(kootuPayout)}* (₹${formatCurrency(total)} – ₹${formatCurrency(commission)})
+
+7️⃣ The member who receives the kootu amount will be selected through a *lucky draw* only.
+
+8️⃣ Once a member receives the kootu amount, they must continue paying their monthly contribution till the end of the term.
+
+9️⃣ The kootu amount will be given to the selected member within *${disburse} days* after collection.
+
+🔟 Members should not withdraw in the middle unless a replacement member is arranged with group approval.
+
+━━━━━━━━━━━━━━━━━━
+
+📢 *கூட்டு விதிமுறைகள்*
+━━━━━━━━━━━━━━━━━━
+
+1️⃣ கொட்டு காலம் *${duration} மாதங்கள்*, உறுப்பினர்கள் *${members} பேர்* (ஒவ்வொருவரும் ஒருமுறை தொகை பெறுவார்கள்).
+
+2️⃣ மாதந்தோறும் மொத்தமாக *₹${formatCurrency(total)}* வசூலிக்கப்படும். ஒவ்வொருவரும் *₹${formatCurrency(perPerson)}* செலுத்த வேண்டும்.
+
+3️⃣ *${freqTa}* ${chitDay}ஆம் தேதி கொட்டு நடைபெறும்.
+
+4️⃣ அனைத்து உறுப்பினர்களும் மாத தவணையை *${dueDay}ஆம்* தேதிக்குள் கட்டாயம் செலுத்த வேண்டும்.
+
+5️⃣ *${freqTa}* கமிஷன் கழித்த பிறகு ஒருவருக்கு தொகை வழங்கப்படும்.
+
+6️⃣ மொத்த தொகையிலிருந்து *₹${formatCurrency(commission)}* கமிஷனாக கழிக்கப்படும்.
+👉 உறுப்பினர் பெறுவார்: *₹${formatCurrency(kootuPayout)}* (₹${formatCurrency(total)} – ₹${formatCurrency(commission)})
+
+7️⃣ *${freqTa}* கொட்டு பெறும் உறுப்பினர் *லக்கி டிரா* மூலம் மட்டுமே தேர்வு செய்யப்படுவார்.
+
+8️⃣ ஒருவர் கொட்டு தொகை பெற்ற பிறகும், கால அவதி முடியும் வரை மாத தவணையை தொடர்ந்து செலுத்த வேண்டும்.
+
+9️⃣ தேர்ந்தெடுக்கப்பட்ட உறுப்பினருக்கு தொகை *${disburse} நாட்களுக்குள்* வழங்கப்படும்.
+
+🔟 நடுவில் விலக முடியாது; அவசியமெனில் மாற்று உறுப்பினர் கொண்டு வர குழு அனுமதி பெற வேண்டும்.
+
+📌 For more details, feel free to contact.
+📌 மேலும் விவரங்களுக்கு தொடர்பு கொள்ளவும்.`;
+        }
+
+        document.getElementById('rulesPreview').textContent = rules;
+        document.getElementById('previewCard').style.display = '';
+        document.getElementById('previewCard').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function copyRules() {
+        const text = document.getElementById('rulesPreview').innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            showCopyToast();
+        }).catch(() => {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+            document.body.removeChild(ta);
+            showCopyToast();
+        });
+    }
+
+    function showCopyToast() {
+        const toast = document.getElementById('copyToast');
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    // Init
+    initBidTable();
+
+    // User profile
+    document.addEventListener('click', function(e) { if (!e.target.closest('.user-profile')) document.getElementById('userDropdown').classList.remove('show'); });
+    fetch('/check-role').then(r=>r.json()).then(data=>{
+        const initial = (data.username||'?').charAt(0).toUpperCase();
+        document.getElementById('userAvatar').textContent = initial;
+        document.getElementById('userAvatarLarge').textContent = initial;
+        document.getElementById('userName').textContent = data.username||'—';
+        const r = document.getElementById('userRole'); r.textContent = data.role; r.className = 'user-dropdown-role ' + (data.role==='admin'?'ud-role-admin':'ud-role-user');
+    });
+</script>
+</body>
+</html>
