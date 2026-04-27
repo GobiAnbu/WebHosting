@@ -255,6 +255,7 @@ def _send_member_menu(phone, header_text, body_text):
                 "rows": [
                     {"id": "cmd_details", "title": "📋 Chit Details"},
                     {"id": "cmd_month_status", "title": "📅 Current Month Status"},
+                    {"id": "cmd_my_payment", "title": "💳 My Payment History"},
                     {"id": "cmd_change", "title": "🔄 Change Chit"},
                 ]
             }]
@@ -265,9 +266,13 @@ def _send_chit_selection_list(phone, matched):
     """Send chit selection as an interactive list message."""
     rows = []
     for i, m in enumerate(matched):
+        role = m.get("role", "owner")
+        role_label = "👑 Owner" if role == "owner" else "👤 Member"
+        title = m["chitName"][:24]
         rows.append({
             "id": f"chit_{i}",
-            "title": m["chitName"][:24]
+            "title": title,
+            "description": role_label
         })
     send_whatsapp_interactive(phone, {
         "type": "list",
@@ -927,12 +932,12 @@ def _build_contact_chit_map():
             if member_clean and len(member_clean) >= 10:
                 if member_clean not in mapping:
                     mapping[member_clean] = []
-                # If this phone is the owner, ensure owner entry exists (don't add as member)
+                # If this phone is the owner of THIS chit, keep as owner (don't add duplicate member)
                 if member_clean in owner_phones:
                     if not any(e["file"] == cf and e["role"] == "owner" for e in mapping[member_clean]):
                         mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "owner"})
                 else:
-                    # Only add member entry if no entry for this file yet
+                    # This person is only a member of THIS chit — add as member
                     if not any(e["file"] == cf for e in mapping[member_clean]):
                         mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "member", "memberName": member.get("name", "")})
 
@@ -1395,6 +1400,22 @@ def _handle_bot_message(from_number, text):
             if text_lower == "cmd_change":
                 _set_bot_session(from_number, {})
                 _handle_bot_message(from_number, "hi")
+                return
+
+            if text_lower == "cmd_my_payment":
+                member_name = sess.get("memberName", "")
+                if member_name:
+                    result = _search_member_in_chit(member_name, cf)
+                    if result:
+                        send_whatsapp_message(from_number, result)
+                    else:
+                        send_whatsapp_message(from_number, f"⚠️ No payment history found for *{member_name}*.")
+                else:
+                    send_whatsapp_message(from_number, "⚠️ Member name not found. Please type your name to search.")
+                if user_role == "member":
+                    _send_member_menu(from_number, f"💳 {chit_name}", "What would you like to do next?")
+                else:
+                    _send_command_menu(from_number, f"💳 {chit_name}", "What would you like to do next?")
                 return
 
             if text_lower == "cmd_update":
