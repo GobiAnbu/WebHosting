@@ -161,7 +161,7 @@ def send_whatsapp_interactive(phone, interactive_payload):
         "interactive": interactive_payload
     }
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        resp = requests.post(url, headers=headers, json=payload, timeout=15)
         result = resp.json()
         if resp.status_code == 200 and "messages" in result:
             return {"success": True, "message_id": result["messages"][0]["id"]}
@@ -473,7 +473,7 @@ def send_campaign():
     chit_name = chit_info.get("chitName", "")
 
     msg = (
-        f"Status of the Chit {chit_name}:\n\n"
+        f"Status of the Chit *{chit_name}*:\n\n"
         f"🎯 *Chit Taken By:* {name}\n"
         f"📌 *Chit Number:* {chit_number}\n"
         f"💰 *Total Amount:* ₹{total_amount}\n"
@@ -737,7 +737,7 @@ _bot_sessions = {}
 
 # Cached mapping: normalized phone → [{"file": "x.xlsx", "chitName": "..."}]
 _contact_chit_cache = {"data": {}, "timestamp": 0}
-_CONTACT_CACHE_TTL = 300  # seconds (5 minutes)
+_CONTACT_CACHE_TTL = 600  # seconds (10 minutes) — background thread refreshes every 30s anyway
 
 def _normalize_phone(phone):
     """Strip +, leading 0, and country code 91."""
@@ -748,7 +748,7 @@ def _normalize_phone(phone):
 
 def _build_contact_chit_map():
     """Build a mapping of phone number → chit files. Uses cached data when available."""
-    mapping = {}  # normalized_phone → [{"file": ..., "chitName": ...}]
+    mapping = {}
 
     all_files = []
     try:
@@ -759,12 +759,11 @@ def _build_contact_chit_map():
     except Exception:
         return mapping
 
-    # Try to get info from cache first (no API calls needed)
     for cf in all_files:
         try:
             info = gs_get_chit_number(cf)
         except Exception:
-            info = {}
+            continue
         contact = str(info.get("contactNumber", "")).strip().replace(" ", "")
         clean = _normalize_phone(contact)
         if clean:
@@ -780,12 +779,29 @@ def _build_contact_chit_map():
 def _get_chits_for_phone(phone):
     """Get chit files belonging to a phone number, using cache."""
     now = time.time()
-    if now - _contact_chit_cache["timestamp"] > _CONTACT_CACHE_TTL or not _contact_chit_cache["data"]:
-        _contact_chit_cache["data"] = _build_contact_chit_map()
-        _contact_chit_cache["timestamp"] = now
-
     clean = _normalize_phone(phone)
+
+    # If cache is stale, trigger background rebuild but still return old data
+    if now - _contact_chit_cache["timestamp"] > _CONTACT_CACHE_TTL:
+        if _contact_chit_cache["data"]:
+            # Return stale data now, rebuild in background
+            threading.Thread(target=_rebuild_contact_cache, daemon=True).start()
+            return _contact_chit_cache["data"].get(clean, [])
+        else:
+            # No data at all — must build synchronously
+            _contact_chit_cache["data"] = _build_contact_chit_map()
+            _contact_chit_cache["timestamp"] = time.time()
+
     return _contact_chit_cache["data"].get(clean, [])
+
+def _rebuild_contact_cache():
+    """Rebuild contact-chit cache in background."""
+    try:
+        data = _build_contact_chit_map()
+        _contact_chit_cache["data"] = data
+        _contact_chit_cache["timestamp"] = time.time()
+    except Exception:
+        pass
 
 @app.route("/webhook", methods=["GET"])
 def webhook_verify():
@@ -1006,11 +1022,17 @@ def _handle_bot_message(from_number, text):
                     if current_row:
                         # Build reply, skip discount, format month as MMM-YYYY
                         reply = f"📅 *{chit_n}* — Current Month Status\n━━━━━━━━━━━━━━━━━━━━\n"
-                        icons = {"Chit Month": "📅", "Chit Number": "📌", "Conducted": "✅", "Taken By": "🎯", "Chit Amount": "💰", "Amount Per Person": "💳"}
-                        skip_cols = ["discount", "discount amount", "discountamount"]
+                        icons = {"Chit Month": "📅", "Chit Number": "📌", "Conducted": "✅", "Taken By": "🎯", "Chit Amount": "💰", "Amount Per Person": "💳", "Discount": "🏷️", "Discount Amount": "🏷️"}
+                        skip_cols = []
                         for key, val in current_row.items():
-                            if key.lower().strip() in skip_cols:
-                                continue
+                            # Skip discount if value is 0 or empty
+                            if key.lower().strip() in ["discount", "discount amount", "discountamount"]:
+                                try:
+                                    if not val or float(str(val).replace(",", "").strip()) == 0:
+                                        continue
+                                except (ValueError, Exception):
+                                    if not val:
+                                        continue
                             icon = icons.get(key, "▪️")
                             # Format date column as MMM-YYYY
                             if date_col and key == date_col:
@@ -1205,7 +1227,7 @@ def _handle_bot_message(from_number, text):
                 print(f"[Bot] Update campaign error: {e}")
 
             msg = (
-                f"Status of the Chit {chit_n}:\n\n"
+                f"Status of the Chit *{chit_n}*:\n\n"
                 f"🎯 *Chit Taken By:* {selected_name}\n"
                 f"📌 *Chit Number:* {chit_number}\n"
                 f"💰 *Total Amount:* ₹{total_amount}\n"
@@ -1231,7 +1253,7 @@ def _handle_bot_message(from_number, text):
                 send_whatsapp_message(contact_phone, msg)
 
             # Also send confirmation to the user
-            send_whatsapp_message(from_number, f"✅ *Chit Details Updated & Sent!*\n\n{msg}")
+            send_whatsapp_message(from_number, f"✅ *Chit Details Updated & Sent!*")
 
             # Reset to ready state
             _bot_sessions[from_number] = {"step": "ready", "chitFile": cf, "chitName": chit_name}

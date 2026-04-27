@@ -27,12 +27,13 @@ def _get_cached(key, allow_stale=True):
             age = time.time() - ts
             if age < CACHE_STALE:
                 return data  # Fresh
-            if age < CACHE_TTL and allow_stale:
+            if allow_stale:
                 # Stale but usable — trigger background refresh if not already running
                 if key not in _refreshing_keys:
                     _refreshing_keys.add(key)
                     threading.Thread(target=_bg_refresh_key, args=(key,), daemon=True).start()
                 return data  # Return stale data immediately
+            # Not allowing stale and data is old — treat as miss
             if age >= CACHE_TTL:
                 del _cache[key]
     return None
@@ -46,6 +47,16 @@ def _bg_refresh_key(key):
         elif key.startswith("viewdata_"):
             file_name = key[len("viewdata_"):]
             _fetch_and_cache("getChitViewData", file_name, key)
+        elif key == "chit_folders":
+            resp = requests.get(_get_url(), params=_params("getChitFolders"), timeout=30)
+            _set_cache(key, resp.json())
+        elif key.startswith("chit_files_"):
+            folder = key[len("chit_files_"):]
+            p = _params("getChitFiles")
+            if folder:
+                p["folder"] = folder
+            resp = requests.get(_get_url(), params=p, timeout=30)
+            _set_cache(key, resp.json())
     except Exception:
         pass
     finally:
