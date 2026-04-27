@@ -830,8 +830,14 @@ WEBHOOK_VERIFY_TOKEN = os.environ.get("WEBHOOK_VERIFY_TOKEN", "chitfund_bot_veri
 _wa_web_enabled = os.environ.get("WA_WEB_ENABLED", "false").lower() == "true"
 
 # In-memory conversation state per phone number
-# { "919876543210": { "step": "select_chit" | "ready", "chitFile": "xxx.xlsx", "chitFiles": [...] } }
+# { "919876543210": { "step": "select_chit" | "ready", "chitFile": "xxx.xlsx", "last_activity": timestamp, ... } }
 _bot_sessions = {}
+_SESSION_TIMEOUT = 180  # 3 minutes — session expires if no reply
+
+def _set_bot_session(phone, session_data):
+    """Set bot session with automatic last_activity timestamp."""
+    session_data["last_activity"] = time.time()
+    _bot_sessions[phone] = session_data
 
 # Cached mapping: normalized phone → [{"file": "x.xlsx", "chitName": "..."}]
 _contact_chit_cache = {"data": {}, "timestamp": 0}
@@ -1119,6 +1125,28 @@ def _handle_bot_message(from_number, text):
         text_lower = text.lower().strip()
         sess = _bot_sessions.get(from_number, {})
 
+        # ---- EXIT: exit / cancel / bye → end session ----
+        if text_lower in ("exit", "cancel", "bye", "quit", "stop", "close", "end"):
+            if from_number in _bot_sessions:
+                del _bot_sessions[from_number]
+            send_whatsapp_message(from_number,
+                "👋 Session ended. Send *hi* to start again anytime."
+            )
+            return
+
+        # ---- SESSION TIMEOUT: 5 min inactivity → expire session ----
+        if sess and sess.get("last_activity"):
+            elapsed = time.time() - sess["last_activity"]
+            if elapsed > _SESSION_TIMEOUT:
+                del _bot_sessions[from_number]
+                sess = {}
+                # If user sent "hi", let it flow through; otherwise notify timeout
+                if text_lower not in ("hi", "hello", "hey", "hii", "hai", "start", "reset", "menu"):
+                    send_whatsapp_message(from_number,
+                        "⏳ Your session has expired due to inactivity (3 min).\n\nSend *hi* to start again."
+                    )
+                    return
+
         # ---- RESET: hi / hello / start → show chit list ----
         if text_lower in ("hi", "hello", "hey", "hii", "hai", "start", "reset", "menu"):
             matched = _get_chits_for_phone(from_number)
@@ -1140,7 +1168,7 @@ def _handle_bot_message(from_number, text):
                 m = matched[0]
                 role = m.get("role", "owner")
                 member_name = m.get("memberName", "")
-                _bot_sessions[from_number] = {"step": "ready", "chitFile": m["file"], "chitName": m["chitName"], "role": role, "memberName": member_name}
+                _set_bot_session(from_number, {"step": "ready", "chitFile": m["file"], "chitName": m["chitName"], "role": role, "memberName": member_name})
                 if role == "member":
                     welcome_msg = f"Your chit: *{m['chitName']}*\n\nHi *{member_name}*! Select an option below."
                     _send_member_menu(from_number, "👋 Welcome!", welcome_msg)
@@ -1148,7 +1176,7 @@ def _handle_bot_message(from_number, text):
                     _send_command_menu(from_number, "👋 Welcome!", f"Your chit: *{m['chitName']}*\n\nSelect an option or type your *name* for payment history.")
                 return
 
-            _bot_sessions[from_number] = {"step": "select_chit", "chitFiles": [m["file"] for m in matched], "chitNames": [m["chitName"] for m in matched], "chitRoles": [m.get("role", "owner") for m in matched], "chitMemberNames": [m.get("memberName", "") for m in matched]}
+            _set_bot_session(from_number, {"step": "select_chit", "chitFiles": [m["file"] for m in matched], "chitNames": [m["chitName"] for m in matched], "chitRoles": [m.get("role", "owner") for m in matched], "chitMemberNames": [m.get("memberName", "") for m in matched]})
             _send_chit_selection_list(from_number, matched)
             return
 
@@ -1166,7 +1194,7 @@ def _handle_bot_message(from_number, text):
                     chit_name = chit_names[idx] if idx < len(chit_names) else selected.replace(".xlsx", "")
                     role = chit_roles[idx] if idx < len(chit_roles) else "owner"
                     member_name = chit_member_names[idx] if idx < len(chit_member_names) else ""
-                    _bot_sessions[from_number] = {"step": "ready", "chitFile": selected, "chitName": chit_name, "role": role, "memberName": member_name}
+                    _set_bot_session(from_number, {"step": "ready", "chitFile": selected, "chitName": chit_name, "role": role, "memberName": member_name})
                     if role == "member":
                         _send_member_menu(from_number, f"✅ {chit_name}", f"You selected *{chit_name}*\n\nHi *{member_name}*! Select an option below.")
                     else:
@@ -1365,7 +1393,7 @@ def _handle_bot_message(from_number, text):
                 return
 
             if text_lower == "cmd_change":
-                _bot_sessions[from_number] = {}
+                _set_bot_session(from_number, {})
                 _handle_bot_message(from_number, "hi")
                 return
 
@@ -1386,12 +1414,12 @@ def _handle_bot_message(from_number, text):
                     if name and len(rows) < 10:  # WhatsApp max 10 rows
                         rows.append({"id": f"upd_name_{i}", "title": name[:24]})
                 if rows:
-                    _bot_sessions[from_number] = {
+                    _set_bot_session(from_number, {
                         "step": "update_select_name",
                         "chitFile": cf,
                         "chitName": chit_name,
                         "members": members
-                    }
+                    })
                     send_whatsapp_interactive(from_number, {
                         "type": "list",
                         "header": {"type": "text", "text": "📊 Update Chit Details"},
@@ -1430,12 +1458,12 @@ def _handle_bot_message(from_number, text):
                         break
 
             if selected_name:
-                _bot_sessions[from_number] = {
+                _set_bot_session(from_number, {
                     "step": "update_enter_amount",
                     "chitFile": cf,
                     "chitName": chit_name,
                     "selectedName": selected_name
-                }
+                })
                 send_whatsapp_message(from_number, f"✅ Selected: *{selected_name}*\n\nNow enter the *Chit Amount*:")
             else:
                 send_whatsapp_message(from_number, "⚠️ Could not find that member. Please select from the list or type the name.")
@@ -1514,7 +1542,7 @@ def _handle_bot_message(from_number, text):
             send_whatsapp_message(from_number, f"✅ *Chit Details Updated & Sent!*")
 
             # Reset to ready state
-            _bot_sessions[from_number] = {"step": "ready", "chitFile": cf, "chitName": chit_name}
+            _set_bot_session(from_number, {"step": "ready", "chitFile": cf, "chitName": chit_name})
             return
 
         # ---- STEP: Waiting for chit selection (typed number fallback) ----
@@ -1531,7 +1559,7 @@ def _handle_bot_message(from_number, text):
                     chit_name = chit_names[choice - 1] if choice - 1 < len(chit_names) else selected.replace(".xlsx", "")
                     role = chit_roles[choice - 1] if choice - 1 < len(chit_roles) else "owner"
                     member_name = chit_member_names[choice - 1] if choice - 1 < len(chit_member_names) else ""
-                    _bot_sessions[from_number] = {"step": "ready", "chitFile": selected, "chitName": chit_name, "role": role, "memberName": member_name}
+                    _set_bot_session(from_number, {"step": "ready", "chitFile": selected, "chitName": chit_name, "role": role, "memberName": member_name})
                     if role == "member":
                         _send_member_menu(from_number, chit_name, f"You selected *{chit_name}*\n\nHi *{member_name}*! Select an option below.")
                     else:
@@ -1548,7 +1576,7 @@ def _handle_bot_message(from_number, text):
                 if text_lower in name.lower() or text_lower in cf.lower().replace(".xlsx", ""):
                     role = chit_roles[i] if i < len(chit_roles) else "owner"
                     member_name = chit_member_names[i] if i < len(chit_member_names) else ""
-                    _bot_sessions[from_number] = {"step": "ready", "chitFile": cf, "chitName": name, "role": role, "memberName": member_name}
+                    _set_bot_session(from_number, {"step": "ready", "chitFile": cf, "chitName": name, "role": role, "memberName": member_name})
                     if role == "member":
                         _send_member_menu(from_number, name, f"You selected *{name}*\n\nHi *{member_name}*! Select an option below.")
                     else:
@@ -1569,7 +1597,7 @@ def _handle_bot_message(from_number, text):
         user_role = sess.get("role", "owner")
 
         if text_lower in ("change", "switch", "back", "select", "chit"):
-            _bot_sessions[from_number] = {}
+            _set_bot_session(from_number, {})
             _handle_bot_message(from_number, "hi")
             return
 
