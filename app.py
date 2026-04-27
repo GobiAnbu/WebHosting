@@ -470,8 +470,12 @@ def send_campaign():
     name = data.get("name", "")
     amount_need_to_pay = math.ceil((float(chit_amount) / 20) / 10) * 10 if chit_amount else 0
 
-    # Update Google Sheet
+    # Update Google Sheet (always happens regardless of toggle)
     update_campaign(chit_file, name, chit_amount, discount_amount, amount_need_to_pay)
+
+    # If WhatsApp web sending is disabled, return success with sheet-only message
+    if not _wa_web_enabled:
+        return jsonify({"success": True, "sheet_only": True, "message": "Sheet updated successfully. WhatsApp sending is disabled."})
 
     # Get all members for WhatsApp links
     all_members = get_all_members(chit_file)
@@ -526,6 +530,8 @@ def send_campaign():
 @app.route("/send-reminder", methods=["POST"])
 @login_required
 def send_reminder():
+    if not _wa_web_enabled:
+        return jsonify({"success": False, "error": "WhatsApp sending from web is disabled. Enable it in Settings."})
     data = request.get_json()
     message = data.get("message", "")
     members = data.get("members", [])
@@ -547,6 +553,8 @@ def send_reminder():
 @app.route("/send-tomorrow-reminder", methods=["POST"])
 @login_required
 def send_tomorrow_reminder():
+    if not _wa_web_enabled:
+        return jsonify({"success": False, "error": "WhatsApp sending from web is disabled. Enable it in Settings."})
     data = request.get_json()
     message = data.get("message", "")
     chit_date = data.get("date", "")
@@ -750,6 +758,9 @@ def update_user():
 
 WEBHOOK_VERIFY_TOKEN = os.environ.get("WEBHOOK_VERIFY_TOKEN", "chitfund_bot_verify_2026")
 
+# WhatsApp web sending toggle (does NOT affect bot/webhook)
+_wa_web_enabled = os.environ.get("WA_WEB_ENABLED", "true").lower() == "true"
+
 # In-memory conversation state per phone number
 # { "919876543210": { "step": "select_chit" | "ready", "chitFile": "xxx.xlsx", "chitFiles": [...] } }
 _bot_sessions = {}
@@ -923,6 +934,36 @@ def save_webhook_token():
     except Exception:
         pass
     return jsonify({"success": True})
+
+@app.route("/get-wa-web-enabled")
+@admin_required
+def get_wa_web_enabled():
+    return jsonify({"enabled": _wa_web_enabled})
+
+@app.route("/set-wa-web-enabled", methods=["POST"])
+@admin_required
+def set_wa_web_enabled():
+    global _wa_web_enabled
+    data = request.get_json()
+    _wa_web_enabled = bool(data.get("enabled", True))
+    os.environ["WA_WEB_ENABLED"] = "true" if _wa_web_enabled else "false"
+    # Persist to .env
+    try:
+        env_vars = {}
+        if os.path.exists(".env"):
+            with open(".env", "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if "=" in line and not line.startswith("#"):
+                        k, v = line.split("=", 1)
+                        env_vars[k.strip()] = v.strip()
+        env_vars["WA_WEB_ENABLED"] = "true" if _wa_web_enabled else "false"
+        with open(".env", "w") as f:
+            for k, v in env_vars.items():
+                f.write(f"{k}={v}\n")
+    except Exception:
+        pass
+    return jsonify({"success": True, "enabled": _wa_web_enabled})
 
 # ==================== BOT CONVERSATION LOGIC ====================
 

@@ -490,6 +490,24 @@ Please make sure to be available if you are willing to take the chit.
         document.getElementById('userName').textContent = data.username||'—';
         const r = document.getElementById('userRole'); r.textContent = data.role; r.className = 'user-dropdown-role ' + (data.role==='admin'?'ud-role-admin':'ud-role-user');
     });
+
+    function copyPreviewText() {
+        const text = document.getElementById("waPreviewText").innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            const toast = document.getElementById("copyToast");
+            toast.classList.add("show");
+            setTimeout(() => toast.classList.remove("show"), 2000);
+        }).catch(() => {
+            const ta = document.createElement("textarea");
+            ta.value = document.getElementById("waPreviewText").innerText;
+            document.body.appendChild(ta); ta.select(); document.execCommand("copy");
+            document.body.removeChild(ta);
+            const toast = document.getElementById("copyToast");
+            toast.classList.add("show");
+            setTimeout(() => toast.classList.remove("show"), 2000);
+        });
+    }
+    document.querySelector(".wa-bubble").addEventListener("click", copyPreviewText);
 </script>
 </body>
 </html>

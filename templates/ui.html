@@ -691,7 +691,9 @@
         })
         .then(r => r.json())
         .then(data => {
-            if (data.success) {
+            if (data.success && data.sheet_only) {
+                showPopup("✅ Sheet updated successfully!\n📵 WhatsApp sending is disabled in Settings.");
+            } else if (data.success) {
                 showPopup("✅ Chit Details Updated & Message sent successfully via WhatsApp!");
             } else {
                 showPopup("❌ Failed: " + (data.error || "Unknown error"));

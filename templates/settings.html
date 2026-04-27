@@ -50,6 +50,18 @@
         .info-box a { color: #64B5F6; }
         .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: rgba(0,0,0,0.85); color: #fff; padding: 12px 28px; border-radius: 12px; font-size: 0.9rem; transition: transform 0.4s ease; z-index: 1000; }
         .toast.show { transform: translateX(-50%) translateY(0); }
+        .toggle-switch { position: relative; display: inline-block; width: 52px; height: 28px; flex-shrink: 0; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.15); border-radius: 28px; transition: 0.3s;
+        }
+        .toggle-slider::before {
+            content: ""; position: absolute; height: 22px; width: 22px; left: 3px; bottom: 3px;
+            background: #fff; border-radius: 50%; transition: 0.3s;
+        }
+        .toggle-switch input:checked + .toggle-slider { background: #25D366; }
+        .toggle-switch input:checked + .toggle-slider::before { transform: translateX(24px); }
         @media (max-width: 600px) {
             .back-btn { position: static; display: inline-block; margin-bottom: 16px; }
             .header h1 { font-size: 1.5rem; }
@@ -131,6 +143,24 @@
         <button class="btn-save" style="background: linear-gradient(135deg, #FF9800, #F57C00);" onclick="saveConfig()">💾 Update Token</button>
         <button class="btn-save" style="background: linear-gradient(135deg, #2196F3, #1565C0); margin-top: 10px;" onclick="verifyToken()">🔍 Verify Token</button>
         <div id="verifyResult" style="margin-top: 12px; padding: 12px; border-radius: 10px; display: none; font-size: 0.88rem;"></div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">📲 Web WhatsApp Sending</div>
+        <p style="color:rgba(255,255,255,0.5); font-size:0.82rem; margin-bottom:16px;">
+            Enable or disable sending WhatsApp messages from the web application (Chit Details, Reminder, Chit Tomorrow pages).<br>
+            <strong style="color:rgba(255,255,255,0.7);">Note:</strong> This does NOT affect the WhatsApp bot — users can still interact via WhatsApp.
+        </p>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:rgba(255,255,255,0.04); border-radius:12px; border:1px solid rgba(255,255,255,0.08);">
+            <div>
+                <div style="color:#fff; font-size:0.92rem; font-weight:600;" id="waWebLabel">WhatsApp Sending: Loading...</div>
+                <div style="color:rgba(255,255,255,0.4); font-size:0.75rem; margin-top:2px;" id="waWebDesc">Controls message sending from web pages</div>
+            </div>
+            <label class="toggle-switch">
+                <input type="checkbox" id="waWebToggle" onchange="toggleWaWeb()">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
     </div>
 
     <div class="card">
@@ -236,6 +266,40 @@
         t.textContent = msg;
         t.classList.add("show");
         setTimeout(() => t.classList.remove("show"), 4000);
+    }
+
+    // Load WA web sending status
+    fetch("/get-wa-web-enabled")
+        .then(r => r.json())
+        .then(data => {
+            const toggle = document.getElementById("waWebToggle");
+            const label = document.getElementById("waWebLabel");
+            const desc = document.getElementById("waWebDesc");
+            toggle.checked = data.enabled;
+            label.textContent = data.enabled ? "WhatsApp Sending: ✅ Enabled" : "WhatsApp Sending: ❌ Disabled";
+            label.style.color = data.enabled ? "#25D366" : "#ff6b6b";
+            desc.textContent = data.enabled ? "Messages will be sent from web pages" : "Messages will NOT be sent from web pages";
+        });
+
+    function toggleWaWeb() {
+        const enabled = document.getElementById("waWebToggle").checked;
+        fetch("/set-wa-web-enabled", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: enabled })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const label = document.getElementById("waWebLabel");
+                const desc = document.getElementById("waWebDesc");
+                label.textContent = data.enabled ? "WhatsApp Sending: ✅ Enabled" : "WhatsApp Sending: ❌ Disabled";
+                label.style.color = data.enabled ? "#25D366" : "#ff6b6b";
+                desc.textContent = data.enabled ? "Messages will be sent from web pages" : "Messages will NOT be sent from web pages";
+                showToast(data.enabled ? "✅ WhatsApp web sending enabled" : "🚫 WhatsApp web sending disabled");
+            }
+        })
+        .catch(() => showToast("❌ Error updating setting"));
     }
 
     document.addEventListener('click', function(e) { if (!e.target.closest('.user-profile')) document.getElementById('userDropdown').classList.remove('show'); });
