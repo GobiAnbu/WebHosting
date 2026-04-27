@@ -622,14 +622,16 @@ function handleGetChitViewData(fileName) {
 
 function handleGetAllFilesData() {
   var folder = getChitDataFolder();
-  if (!folder) return { files: {}, folders: [] };
+  if (!folder) return { files: {}, folders: [], folderFiles: {} };
 
-  var result = { files: {}, folders: [] };
+  var result = { files: {}, folders: [], folderFiles: {} };
 
   var subFolders = folder.getFolders();
   while (subFolders.hasNext()) {
     var subFolder = subFolders.next();
-    result.folders.push(subFolder.getName());
+    var folderName = subFolder.getName();
+    result.folders.push(folderName);
+    result.folderFiles[folderName] = [];
 
     var files = subFolder.getFiles();
     while (files.hasNext()) {
@@ -639,6 +641,7 @@ function handleGetAllFilesData() {
           mime !== "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") continue;
 
       var fileName = file.getName();
+      result.folderFiles[folderName].push(fileName);
       try {
         var ss;
         if (mime === "application/vnd.google-apps.spreadsheet") {

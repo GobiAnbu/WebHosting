@@ -99,6 +99,18 @@ def clear_cache(file=None):
         else:
             _cache.clear()
 
+def get_all_cached_alldata():
+    """Return dict of {filename: alldata} for all files currently in cache.
+    This avoids making API calls — reads only from in-memory cache."""
+    result = {}
+    with _cache_lock:
+        for key, (data, ts) in _cache.items():
+            if key.startswith("alldata_") and isinstance(data, dict):
+                file_name = key[len("alldata_"):]
+                if file_name:
+                    result[file_name] = data
+    return result
+
 def _get_url():
     if not APPS_SCRIPT_URL:
         raise Exception("Apps Script URL not configured. Set APPS_SCRIPT_URL in google_sheets_api.py")
@@ -265,12 +277,17 @@ def refresh_all_files():
         folders = bulk.get("folders", [])
         if folders:
             _set_cache("chit_folders", folders)
-            # Cache folder→files mapping
-            folder_files = {}  # folder_name → [file_names]
-            for fn in bulk["files"]:
-                # We don't know which folder each file belongs to from the bulk response,
-                # so we cache alldata and viewdata per file directly
-                pass
+
+        # Cache per-folder file lists from bulk response
+        folder_files = bulk.get("folderFiles", {})
+        if folder_files:
+            for folder_name, file_list in folder_files.items():
+                _set_cache(f"chit_files_{folder_name}", file_list)
+        else:
+            # Fallback: bulk response doesn't have folderFiles (old Apps Script version)
+            all_file_names = list(bulk["files"].keys())
+            for folder in folders:
+                _set_cache(f"chit_files_{folder}", all_file_names)
 
         file_count = 0
         for file_name, file_data in bulk["files"].items():

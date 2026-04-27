@@ -16,7 +16,7 @@ from google_sheets_api import (
     get_chit_number as gs_get_chit_number, update_campaign,
     get_reminder_data, get_contact_number, get_all_chit_data,
     get_chit_view_data as gs_get_chit_view_data,
-    refresh_all_files
+    refresh_all_files, get_all_cached_alldata
 )
 
 import threading
@@ -805,31 +805,44 @@ def _normalize_phone(phone):
     return p
 
 def _build_contact_chit_map():
-    """Build a mapping of phone number → chit files. Maps both owners and members."""
+    """Build a mapping of phone number → chit files. Maps both owners and members.
+    Reads directly from in-memory cache to avoid API calls that can fail/timeout."""
     mapping = {}  # normalized_phone → [{"file": ..., "chitName": ..., "role": "owner"|"member"}]
 
-    all_files = []
-    try:
-        folders = gs_get_chit_folders()
-        for folder in folders:
-            files = gs_get_chit_files(folder)
-            all_files.extend(files)
-    except Exception as e:
-        print(f"[ContactMap] ❌ Failed to get folders/files: {e}")
-        return mapping
+    # Get all cached file data — no API calls, just reads from memory
+    all_cached = get_all_cached_alldata()
 
-    print(f"[ContactMap] Building map for {len(all_files)} files...")
-
-    for cf in all_files:
+    if not all_cached:
+        # Cache is empty — fall back to API calls as last resort
+        print("[ContactMap] ⚠️ No cached data found, falling back to API calls...")
+        all_files = []
         try:
-            info = gs_get_chit_number(cf)
+            folders = gs_get_chit_folders()
+            for folder in folders:
+                files = gs_get_chit_files(folder)
+                all_files.extend(files)
         except Exception as e:
-            print(f"[ContactMap] ❌ Failed to get info for {cf}: {e}")
+            print(f"[ContactMap] ❌ Failed to get folders/files: {e}")
+            return mapping
+
+        for cf in all_files:
+            try:
+                data = get_all_chit_data(cf)
+                if data:
+                    all_cached[cf] = data
+            except Exception as e:
+                print(f"[ContactMap] ❌ Failed to fetch {cf}: {e}")
+
+    print(f"[ContactMap] Building map from {len(all_cached)} cached files...")
+
+    for cf, data in all_cached.items():
+        if not isinstance(data, dict):
             continue
-        chit_name = info.get("chitName", cf.replace(".xlsx", ""))
+
+        chit_name = data.get("chitName", cf.replace(".xlsx", ""))
 
         # Map owner (contactNumber from chitDetails)
-        contact_raw = info.get("contactNumber", "")
+        contact_raw = data.get("contactNumber", "")
         contact = str(contact_raw).strip().replace(" ", "")
         # Handle multiple numbers separated by , or /
         contact_parts = [c.strip() for c in contact.replace("/", ",").split(",") if c.strip()]
@@ -849,30 +862,26 @@ def _build_contact_chit_map():
         print(f"[ContactMap] {cf} → contactNumber='{contact_raw}' → owners={owner_phones}")
 
         # Map members (MobileNumber from chitMembers)
-        try:
-            data = get_all_chit_data(cf)
-            members = data.get("members", [])
-            for member in members:
-                mobile = str(member.get("mobile", "")).strip().replace(" ", "")
-                member_clean = _normalize_phone(mobile)
-                if member_clean and len(member_clean) >= 10:
-                    if member_clean not in mapping:
-                        mapping[member_clean] = []
-                    # If this phone is the owner, ensure owner entry exists (don't add as member)
-                    if member_clean in owner_phones:
-                        if not any(e["file"] == cf and e["role"] == "owner" for e in mapping[member_clean]):
-                            mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "owner"})
-                    else:
-                        # Only add member entry if no entry for this file yet
-                        if not any(e["file"] == cf for e in mapping[member_clean]):
-                            mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "member", "memberName": member.get("name", "")})
-        except Exception as e:
-            print(f"[ContactMap] ❌ Failed to map members for {cf}: {e}")
+        members = data.get("members", [])
+        for member in members:
+            mobile = str(member.get("mobile", "")).strip().replace(" ", "")
+            member_clean = _normalize_phone(mobile)
+            if member_clean and len(member_clean) >= 10:
+                if member_clean not in mapping:
+                    mapping[member_clean] = []
+                # If this phone is the owner, ensure owner entry exists (don't add as member)
+                if member_clean in owner_phones:
+                    if not any(e["file"] == cf and e["role"] == "owner" for e in mapping[member_clean]):
+                        mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "owner"})
+                else:
+                    # Only add member entry if no entry for this file yet
+                    if not any(e["file"] == cf for e in mapping[member_clean]):
+                        mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "member", "memberName": member.get("name", "")})
 
     # Log final mapping summary
     for phone, entries in mapping.items():
         print(f"[ContactMap] {phone}: {[(e['chitName'], e['role']) for e in entries]}")
-    print(f"[ContactMap] ✅ Map built: {len(mapping)} phone numbers")
+    print(f"[ContactMap] ✅ Map built: {len(mapping)} phone numbers from {len(all_cached)} files")
 
     return mapping
 
@@ -900,14 +909,15 @@ def _get_chits_for_phone(phone):
     # If not found and cache was built recently (could be a race condition on startup),
     # try one fresh build as a fallback
     if not result and _cache_ready:
-        print(f"[Bot] Phone {clean} not in cache ({len(_contact_chit_cache['data'])} entries). Trying fresh build...")
+        cached_count = len(get_all_cached_alldata())
+        print(f"[Bot] Phone {clean} not in contact cache ({len(_contact_chit_cache['data'])} phones, {cached_count} files in data cache). Trying fresh map build...")
         try:
             fresh_map = _build_contact_chit_map()
             if fresh_map:
                 result = fresh_map.get(clean, [])
-                if result:
-                    _contact_chit_cache["data"] = fresh_map
-                    _contact_chit_cache["timestamp"] = time.time()
+                # Always update the contact cache with fresh map
+                _contact_chit_cache["data"] = fresh_map
+                _contact_chit_cache["timestamp"] = time.time()
         except Exception as e:
             print(f"[Bot] Fresh build failed: {e}")
 
