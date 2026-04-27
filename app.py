@@ -30,25 +30,47 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
 @app.before_request
 def make_session_permanent():
     session.permanent = True
+    start_background_refresh()  # Ensure cache starts on first request
 
 # ==================== BACKGROUND DATA REFRESH ====================
 _bg_thread_started = False
+
+# Log startup config status
+_script_url = os.environ.get("APPS_SCRIPT_URL", "")
+_script_key = os.environ.get("APPS_SCRIPT_API_KEY", "")
+print(f"[Startup] APPS_SCRIPT_URL set: {bool(_script_url)} (len={len(_script_url)})")
+print(f"[Startup] APPS_SCRIPT_API_KEY set: {bool(_script_key)} (len={len(_script_key)})")
+if not _script_url:
+    print("[Startup] ❌ WARNING: APPS_SCRIPT_URL is not set! Data will NOT load.")
+if not _script_key:
+    print("[Startup] ❌ WARNING: APPS_SCRIPT_API_KEY is not set! API calls will fail.")
 
 def background_refresh():
     """Continuously refresh cache in background using parallel fetches."""
     global _cache_ready
     # Initial warm-up: refresh all files immediately on startup
-    print("[Cache] 🔄 Starting initial data refresh...")
-    refresh_all_files()
-    # Pre-build contact-chit mapping so bot responds instantly
-    initial_map = _build_contact_chit_map()
-    if initial_map:
-        _contact_chit_cache["data"] = initial_map
-        _contact_chit_cache["timestamp"] = time.time()
+    # Retry up to 3 times if initial load fails
+    for attempt in range(1, 4):
+        try:
+            print(f"[Cache] 🔄 Starting initial data refresh (attempt {attempt}/3)...")
+            refresh_all_files()
+            initial_map = _build_contact_chit_map()
+            if initial_map:
+                _contact_chit_cache["data"] = initial_map
+                _contact_chit_cache["timestamp"] = time.time()
+            print(f"[Cache] ✅ Initial cache ready — {len(_contact_chit_cache['data'])} phone numbers mapped")
+            break  # Success
+        except Exception as e:
+            print(f"[Cache] ❌ Initial refresh attempt {attempt} failed: {e}")
+            import traceback
+            traceback.print_exc()
+            if attempt < 3:
+                time.sleep(10)  # Wait before retry
+    # ALWAYS set cache ready — even if all attempts failed, let the bot work with empty cache
+    # rather than permanently showing "starting up"
     _cache_ready = True
-    print(f"[Cache] ✅ Initial cache ready — {len(_contact_chit_cache['data'])} phone numbers mapped")
     while True:
-        time.sleep(30)  # Refresh every 30 seconds
+        time.sleep(60)  # Refresh every 60 seconds
         try:
             refresh_all_files()
             # Rebuild contact map with fresh data
@@ -265,7 +287,17 @@ def preload_all_data():
 
 @app.route("/health")
 def health_check():
-    return jsonify({"status": "ok"}), 200
+    cached_files = get_all_cached_alldata()
+    return jsonify({
+        "status": "ok",
+        "cache_ready": _cache_ready,
+        "cached_files_count": len(cached_files),
+        "cached_files": list(cached_files.keys()),
+        "contact_map_count": len(_contact_chit_cache.get("data", {})),
+        "contact_cache_age_sec": int(time.time() - _contact_chit_cache.get("timestamp", 0)),
+        "apps_script_url_set": bool(os.environ.get("APPS_SCRIPT_URL", "")),
+        "apps_script_key_set": bool(os.environ.get("APPS_SCRIPT_API_KEY", "")),
+    }), 200
 
 # ==================== AUTH ROUTES ====================
 
@@ -906,16 +938,24 @@ def _get_chits_for_phone(phone):
 
     result = _contact_chit_cache["data"].get(clean, [])
 
-    # If not found and cache was built recently (could be a race condition on startup),
-    # try one fresh build as a fallback
-    if not result and _cache_ready:
+    # If not found, try rebuilding the map
+    if not result:
         cached_count = len(get_all_cached_alldata())
-        print(f"[Bot] Phone {clean} not in contact cache ({len(_contact_chit_cache['data'])} phones, {cached_count} files in data cache). Trying fresh map build...")
+        print(f"[Bot] Phone {clean} not in contact cache ({len(_contact_chit_cache['data'])} phones, {cached_count} files in data cache).")
+
+        # If data cache is also empty, try a full refresh first
+        if cached_count == 0:
+            print(f"[Bot] Data cache is empty! Trying full refresh...")
+            try:
+                refresh_all_files()
+            except Exception as e:
+                print(f"[Bot] Full refresh failed: {e}")
+
+        print(f"[Bot] Trying fresh map build...")
         try:
             fresh_map = _build_contact_chit_map()
             if fresh_map:
                 result = fresh_map.get(clean, [])
-                # Always update the contact cache with fresh map
                 _contact_chit_cache["data"] = fresh_map
                 _contact_chit_cache["timestamp"] = time.time()
         except Exception as e:
@@ -951,6 +991,7 @@ def webhook_verify():
 @app.route("/webhook", methods=["POST"])
 def webhook_receive():
     """Receive incoming WhatsApp messages."""
+    start_background_refresh()  # Ensure cache is warming up
     body = request.get_json(silent=True)
     if not body:
         return "OK", 200

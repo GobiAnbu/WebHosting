@@ -258,13 +258,22 @@ def get_chit_view_data(spreadsheet_name, force_refresh=False):
 def fetch_all_files_bulk():
     """Fetch ALL chit files data in ONE API call. Returns {files: {filename: data}, folders: [...]}."""
     try:
-        resp = requests.get(_get_url(), params=_params("getAllFilesData"), timeout=90)
+        url = _get_url()
+        print(f"[Cache] Attempting bulk fetch from {url[:50]}...")
+        resp = requests.get(url, params=_params("getAllFilesData"), timeout=90)
         resp.raise_for_status()
         data = resp.json()
-        if not data or "files" not in data:
-            print("[Cache] ⚠️ Bulk fetch returned empty/invalid data")
+        if isinstance(data, dict) and "error" in data:
+            print(f"[Cache] ⚠️ Bulk fetch returned error: {data['error']}")
             return None
+        if not data or not isinstance(data, dict) or "files" not in data:
+            print(f"[Cache] ⚠️ Bulk fetch returned unexpected data type: {type(data)}")
+            return None
+        print(f"[Cache] ✅ Bulk fetch got {len(data.get('files', {}))} files")
         return data
+    except requests.exceptions.Timeout:
+        print("[Cache] ⚠️ Bulk fetch timed out (90s)")
+        return None
     except Exception as e:
         print(f"[Cache] ❌ Bulk fetch failed: {e}")
         return None
@@ -333,16 +342,20 @@ def refresh_all_files():
 def _refresh_all_files_individual():
     """Fallback: refresh all chit files with individual parallel calls."""
     try:
+        print("[Cache] 📂 Fetching folder list...")
         folders = get_chit_folders()
+        print(f"[Cache] 📂 Found {len(folders)} folders: {folders}")
         all_files = []
         for folder in folders:
             files = get_chit_files(folder)
+            print(f"[Cache] 📄 Folder '{folder}': {len(files)} files")
             all_files.extend(files)
 
         if not all_files:
             print("[Cache] ⚠️ No chit files found to refresh")
             return
 
+        print(f"[Cache] 🔄 Refreshing {len(all_files)} files individually...")
         # Use thread pool to refresh files in parallel (max 4 concurrent)
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = []
@@ -354,8 +367,11 @@ def _refresh_all_files_individual():
                     future.result()
                 except Exception as e:
                     print(f"[Cache] ⚠️ File refresh error: {e}")
+        print(f"[Cache] ✅ Individual refresh done")
     except Exception as e:
         print(f"[Cache] ❌ refresh_all_files error: {e}")
+        import traceback
+        traceback.print_exc()
 
 def _refresh_single_file(file_name):
     """Refresh both cache entries for a single file."""
