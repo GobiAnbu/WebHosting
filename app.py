@@ -764,7 +764,7 @@ def update_user():
 WEBHOOK_VERIFY_TOKEN = os.environ.get("WEBHOOK_VERIFY_TOKEN", "chitfund_bot_verify_2026")
 
 # WhatsApp web sending toggle (does NOT affect bot/webhook)
-_wa_web_enabled = os.environ.get("WA_WEB_ENABLED", "true").lower() == "true"
+_wa_web_enabled = os.environ.get("WA_WEB_ENABLED", "false").lower() == "true"
 
 # In-memory conversation state per phone number
 # { "919876543210": { "step": "select_chit" | "ready", "chitFile": "xxx.xlsx", "chitFiles": [...] } }
