@@ -254,7 +254,7 @@ def fetch_all_files_bulk():
     try:
         url = _get_url()
         print(f"[Cache] Attempting bulk fetch from {url[:50]}...")
-        resp = requests.get(url, params=_params("getAllFilesData"), timeout=90)
+        resp = requests.get(url, params=_params("getAllFilesData"), timeout=120)
         resp.raise_for_status()
         data = resp.json()
         if isinstance(data, dict) and "error" in data:

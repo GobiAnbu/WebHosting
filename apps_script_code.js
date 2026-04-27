@@ -642,160 +642,181 @@ function handleGetAllFilesData() {
 
       var fileName = file.getName();
       result.folderFiles[folderName].push(fileName);
-      try {
-        var ss;
-        if (mime === "application/vnd.google-apps.spreadsheet") {
-          ss = SpreadsheetApp.open(file);
-        } else {
-          // Convert xlsx to Google Sheets
-          var converted = Drive.Files.copy(
-            { title: file.getName(), parents: [{ id: subFolder.getId() }], mimeType: "application/vnd.google-apps.spreadsheet" },
-            file.getId()
-          );
-          file.setTrashed(true);
-          ss = SpreadsheetApp.openById(converted.id);
-        }
 
-        var now = new Date();
+      // Retry up to 2 times with delay to handle Drive quota errors
+      var maxRetries = 2;
+      for (var attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          if (attempt > 0) Utilities.sleep(2000); // Wait 2s before retry
 
-        // --- chitMembers ---
-        var members = [], activeMembers = [];
-        var membersSheet = ss.getSheetByName("chitMembers");
-        if (membersSheet) {
-          var mData = membersSheet.getDataRange().getValues();
-          var mHeaders = mData[0];
-          var nameIdx = mHeaders.indexOf("Name");
-          var mobileIdx = mHeaders.indexOf("MobileNumber");
-          var withdrawIdx = mHeaders.indexOf("Withdraw");
-          for (var i = 1; i < mData.length; i++) {
-            var name = mData[i][nameIdx];
-            var mobile = mData[i][mobileIdx];
-            if (name && String(name).trim() && mobile) {
-              var m = { name: String(name).trim(), mobile: String(mobile).trim() };
-              members.push(m);
-              var withdraw = withdrawIdx >= 0 ? String(mData[i][withdrawIdx]).trim().toLowerCase() : "no";
-              if (withdraw !== "Yes") activeMembers.push(m);
-            }
+          var ss = _openSpreadsheet(file, mime, subFolder);
+          result.files[fileName] = _extractFileData(ss);
+          break; // Success, exit retry loop
+        } catch (err) {
+          if (attempt < maxRetries && err.message && err.message.indexOf("Drive") >= 0) {
+            // Drive quota error — retry after delay
+            Utilities.sleep(3000);
+          } else {
+            result.files[fileName] = { error: err.message };
+            break;
           }
         }
-
-        // --- chitNumberDetails ---
-        var chitNumber = "", noCount = 0, amountPerPerson = 0, conductedStatus = "";
-        var chitNumberRows = [], chitNumberHeaders = [];
-        var numSheet = ss.getSheetByName("chitNumberDetails");
-        if (numSheet) {
-          var nData = numSheet.getDataRange().getValues();
-          var nHeaders = nData[0];
-          for (var h = 0; h < nHeaders.length; h++) {
-            var nh = String(nHeaders[h]).trim();
-            if (nh) chitNumberHeaders.push(nh);
-          }
-          for (var j = 1; j < nData.length; j++) {
-            var conducted = String(nData[j][1]).trim().toLowerCase();
-            if (conducted === "no") noCount++;
-            var monthVal = nData[j][2];
-            if (monthVal instanceof Date && monthVal.getMonth() === now.getMonth() && monthVal.getFullYear() === now.getFullYear()) {
-              chitNumber = nData[j][0];
-              amountPerPerson = nData[j][6] || 0;
-              conductedStatus = conducted;
-            }
-            // Build view row
-            var firstVal = nData[j][0];
-            if (firstVal !== "" && firstVal !== null && firstVal !== undefined) {
-              var row = {};
-              for (var k = 0; k < nHeaders.length; k++) {
-                var hdr = String(nHeaders[k]).trim();
-                if (hdr) {
-                  var v = nData[j][k];
-                  row[hdr] = (v instanceof Date) ? Utilities.formatDate(v, Session.getScriptTimeZone(), "dd-MM-yyyy") : (v !== null && v !== undefined ? v : "");
-                }
-              }
-              chitNumberRows.push(row);
-            }
-          }
-        }
-
-        // --- chitDetails ---
-        var totalAmount = 0, chitName = "", gpay = "", contactNumber = "", balanceChit = "";
-        var chitDetails = {};
-        var detailsSheet = ss.getSheetByName("chitDetails");
-        if (detailsSheet) {
-          var dData = detailsSheet.getDataRange().getValues();
-          var dHeaders = dData[0];
-          if (dData.length > 1) {
-            var dRow = dData[1];
-            var idx;
-            idx = dHeaders.indexOf("Chit Amount"); if (idx >= 0) totalAmount = dRow[idx] || 0;
-            idx = dHeaders.indexOf("Chit Name"); if (idx >= 0) chitName = String(dRow[idx] || "");
-            idx = dHeaders.indexOf("Gpay"); if (idx >= 0) gpay = String(dRow[idx] || "");
-            idx = dHeaders.indexOf("Contact Number"); if (idx >= 0) contactNumber = String(dRow[idx] || "");
-            idx = dHeaders.indexOf("Balance Chit"); if (idx >= 0) balanceChit = dRow[idx];
-            // Build full details map
-            for (var di = 0; di < dHeaders.length; di++) {
-              var dkey = String(dHeaders[di]).trim();
-              if (dkey) {
-                var dval = dRow[di];
-                chitDetails[dkey] = (dval instanceof Date) ? Utilities.formatDate(dval, Session.getScriptTimeZone(), "dd-MM-yyyy") : (dval !== null && dval !== undefined ? String(dval) : "");
-              }
-            }
-          }
-        }
-
-        // --- chitMembers view data (with formatted headers) ---
-        var chitMembersView = [], chitMemberHeaders = [];
-        if (membersSheet) {
-          var mvData = membersSheet.getDataRange().getValues();
-          var mvHeaders = mvData[0];
-          for (var mh = 0; mh < mvHeaders.length; mh++) {
-            var rawH = mvHeaders[mh];
-            var mhStr = (rawH instanceof Date) ? Utilities.formatDate(rawH, Session.getScriptTimeZone(), "MMM-yyyy") : String(rawH).trim();
-            if (mhStr) chitMemberHeaders.push(mhStr);
-          }
-          for (var mv = 1; mv < mvData.length; mv++) {
-            var mRow = {};
-            for (var mn = 0; mn < mvHeaders.length; mn++) {
-              var rawHdr = mvHeaders[mn];
-              var mHdr = (rawHdr instanceof Date) ? Utilities.formatDate(rawHdr, Session.getScriptTimeZone(), "MMM-yyyy") : String(rawHdr).trim();
-              if (mHdr) {
-                var mvv = mvData[mv][mn];
-                mRow[mHdr] = (mvv instanceof Date) ? Utilities.formatDate(mvv, Session.getScriptTimeZone(), "dd-MM-yyyy") : (mvv !== null && mvv !== undefined ? mvv : "");
-              }
-            }
-            var sno = mRow["S.No"] !== undefined ? mRow["S.No"] : mRow["S.NO"] !== undefined ? mRow["S.NO"] : mRow["SNo"];
-            if (sno !== "" && sno !== null && sno !== undefined) {
-              chitMembersView.push(mRow);
-            }
-          }
-        }
-
-        result.files[fileName] = {
-          // alldata fields
-          members: members,
-          activeMembers: activeMembers,
-          chitNumber: chitNumber,
-          chitRemaining: noCount - 1,
-          amountPerPerson: amountPerPerson,
-          totalAmount: totalAmount,
-          chitName: chitName,
-          gpay: gpay,
-          contactNumber: contactNumber,
-          conducted: conductedStatus,
-          balanceChit: balanceChit,
-          // viewdata fields
-          chitDetails: chitDetails,
-          chitNumberRows: chitNumberRows,
-          chitNumberHeaders: chitNumberHeaders,
-          chitMembers: chitMembersView,
-          chitMemberHeaders: chitMemberHeaders
-        };
-      } catch (err) {
-        result.files[fileName] = { error: err.message };
       }
+
+      // Small delay between files to avoid hitting Drive API quota
+      Utilities.sleep(500);
     }
   }
 
   result.folders.sort();
   return result;
+}
+
+function _openSpreadsheet(file, mime, subFolder) {
+  if (mime === "application/vnd.google-apps.spreadsheet") {
+    return SpreadsheetApp.open(file);
+  } else {
+    // Convert xlsx to Google Sheets
+    var converted = Drive.Files.copy(
+      { title: file.getName(), parents: [{ id: subFolder.getId() }], mimeType: "application/vnd.google-apps.spreadsheet" },
+      file.getId()
+    );
+    file.setTrashed(true);
+    return SpreadsheetApp.openById(converted.id);
+  }
+}
+
+function _extractFileData(ss) {
+  var now = new Date();
+
+  // --- chitMembers ---
+  var members = [], activeMembers = [];
+  var membersSheet = ss.getSheetByName("chitMembers");
+  if (membersSheet) {
+    var mData = membersSheet.getDataRange().getValues();
+    var mHeaders = mData[0];
+    var nameIdx = mHeaders.indexOf("Name");
+    var mobileIdx = mHeaders.indexOf("MobileNumber");
+    var withdrawIdx = mHeaders.indexOf("Withdraw");
+    for (var i = 1; i < mData.length; i++) {
+      var name = mData[i][nameIdx];
+      var mobile = mData[i][mobileIdx];
+      if (name && String(name).trim() && mobile) {
+        var m = { name: String(name).trim(), mobile: String(mobile).trim() };
+        members.push(m);
+        var withdraw = withdrawIdx >= 0 ? String(mData[i][withdrawIdx]).trim().toLowerCase() : "no";
+        if (withdraw !== "Yes") activeMembers.push(m);
+      }
+    }
+  }
+
+  // --- chitNumberDetails ---
+  var chitNumber = "", noCount = 0, amountPerPerson = 0, conductedStatus = "";
+  var chitNumberRows = [], chitNumberHeaders = [];
+  var numSheet = ss.getSheetByName("chitNumberDetails");
+  if (numSheet) {
+    var nData = numSheet.getDataRange().getValues();
+    var nHeaders = nData[0];
+    for (var h = 0; h < nHeaders.length; h++) {
+      var nh = String(nHeaders[h]).trim();
+      if (nh) chitNumberHeaders.push(nh);
+    }
+    for (var j = 1; j < nData.length; j++) {
+      var conducted = String(nData[j][1]).trim().toLowerCase();
+      if (conducted === "no") noCount++;
+      var monthVal = nData[j][2];
+      if (monthVal instanceof Date && monthVal.getMonth() === now.getMonth() && monthVal.getFullYear() === now.getFullYear()) {
+        chitNumber = nData[j][0];
+        amountPerPerson = nData[j][6] || 0;
+        conductedStatus = conducted;
+      }
+      // Build view row
+      var firstVal = nData[j][0];
+      if (firstVal !== "" && firstVal !== null && firstVal !== undefined) {
+        var row = {};
+        for (var k = 0; k < nHeaders.length; k++) {
+          var hdr = String(nHeaders[k]).trim();
+          if (hdr) {
+            var v = nData[j][k];
+            row[hdr] = (v instanceof Date) ? Utilities.formatDate(v, Session.getScriptTimeZone(), "dd-MM-yyyy") : (v !== null && v !== undefined ? v : "");
+          }
+        }
+        chitNumberRows.push(row);
+      }
+    }
+  }
+
+  // --- chitDetails ---
+  var totalAmount = 0, chitName = "", gpay = "", contactNumber = "", balanceChit = "";
+  var chitDetails = {};
+  var detailsSheet = ss.getSheetByName("chitDetails");
+  if (detailsSheet) {
+    var dData = detailsSheet.getDataRange().getValues();
+    var dHeaders = dData[0];
+    if (dData.length > 1) {
+      var dRow = dData[1];
+      var idx;
+      idx = dHeaders.indexOf("Chit Amount"); if (idx >= 0) totalAmount = dRow[idx] || 0;
+      idx = dHeaders.indexOf("Chit Name"); if (idx >= 0) chitName = String(dRow[idx] || "");
+      idx = dHeaders.indexOf("Gpay"); if (idx >= 0) gpay = String(dRow[idx] || "");
+      idx = dHeaders.indexOf("Contact Number"); if (idx >= 0) contactNumber = String(dRow[idx] || "");
+      idx = dHeaders.indexOf("Balance Chit"); if (idx >= 0) balanceChit = dRow[idx];
+      // Build full details map
+      for (var di = 0; di < dHeaders.length; di++) {
+        var dkey = String(dHeaders[di]).trim();
+        if (dkey) {
+          var dval = dRow[di];
+          chitDetails[dkey] = (dval instanceof Date) ? Utilities.formatDate(dval, Session.getScriptTimeZone(), "dd-MM-yyyy") : (dval !== null && dval !== undefined ? String(dval) : "");
+        }
+      }
+    }
+  }
+
+  // --- chitMembers view data (with formatted headers) ---
+  var chitMembersView = [], chitMemberHeaders = [];
+  if (membersSheet) {
+    var mvData = membersSheet.getDataRange().getValues();
+    var mvHeaders = mvData[0];
+    for (var mh = 0; mh < mvHeaders.length; mh++) {
+      var rawH = mvHeaders[mh];
+      var mhStr = (rawH instanceof Date) ? Utilities.formatDate(rawH, Session.getScriptTimeZone(), "MMM-yyyy") : String(rawH).trim();
+      if (mhStr) chitMemberHeaders.push(mhStr);
+    }
+    for (var mv = 1; mv < mvData.length; mv++) {
+      var mRow = {};
+      for (var mn = 0; mn < mvHeaders.length; mn++) {
+        var rawHdr = mvHeaders[mn];
+        var mHdr = (rawHdr instanceof Date) ? Utilities.formatDate(rawHdr, Session.getScriptTimeZone(), "MMM-yyyy") : String(rawHdr).trim();
+        if (mHdr) {
+          var mvv = mvData[mv][mn];
+          mRow[mHdr] = (mvv instanceof Date) ? Utilities.formatDate(mvv, Session.getScriptTimeZone(), "dd-MM-yyyy") : (mvv !== null && mvv !== undefined ? mvv : "");
+        }
+      }
+      var sno = mRow["S.No"] !== undefined ? mRow["S.No"] : mRow["S.NO"] !== undefined ? mRow["S.NO"] : mRow["SNo"];
+      if (sno !== "" && sno !== null && sno !== undefined) {
+        chitMembersView.push(mRow);
+      }
+    }
+  }
+
+  return {
+    members: members,
+    activeMembers: activeMembers,
+    chitNumber: chitNumber,
+    chitRemaining: noCount - 1,
+    amountPerPerson: amountPerPerson,
+    totalAmount: totalAmount,
+    chitName: chitName,
+    gpay: gpay,
+    contactNumber: contactNumber,
+    conducted: conductedStatus,
+    balanceChit: balanceChit,
+    chitDetails: chitDetails,
+    chitNumberRows: chitNumberRows,
+    chitNumberHeaders: chitNumberHeaders,
+    chitMembers: chitMembersView,
+    chitMemberHeaders: chitMemberHeaders
+  };
 }
 
 function handleUpdateMemberPayment(fileName, p) {
