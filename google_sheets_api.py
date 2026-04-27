@@ -63,7 +63,15 @@ def _fetch_and_cache(action, file_name, cache_key):
         resp = requests.get(_get_url(), params=_params(action, file=file_name), timeout=30)
         resp.raise_for_status()
         data = resp.json()
+        # Don't cache error responses as valid data
+        if isinstance(data, dict) and "error" in data:
+            print(f"[Cache] ⚠️ API returned error for {action} on {file_name}: {data.get('error')}")
+            cached = _get_cached(cache_key, allow_stale=True)
+            return cached if cached is not None else {}
         if data:  # Only cache non-empty responses
+            # Debug: log contactNumber for alldata fetches
+            if action == "getAllChitData" and isinstance(data, dict):
+                print(f"[Cache] 📥 {file_name}: contactNumber='{data.get('contactNumber', '')}', chitName='{data.get('chitName', '')}', members={len(data.get('members', []))}")
             _set_cache(cache_key, data)
             return data
         else:

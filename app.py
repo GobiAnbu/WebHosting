@@ -901,11 +901,29 @@ def _build_contact_chit_map():
     for cf, data in all_cached.items():
         if not isinstance(data, dict):
             continue
+        # Skip error entries that got cached
+        if "error" in data and not data.get("members"):
+            print(f"[ContactMap] ⚠️ Skipping '{cf}' — cached error entry")
+            continue
 
         chit_name = data.get("chitName", cf.replace(".xlsx", ""))
 
         # Map owner (contactNumber from chitDetails)
         contact_raw = data.get("contactNumber", "")
+
+        # If contactNumber is empty in alldata, try viewdata cache (stores chitDetails with original headers)
+        if not contact_raw:
+            try:
+                from google_sheets_api import _get_cached
+                viewdata = _get_cached(f"viewdata_{cf}")
+                if viewdata and isinstance(viewdata, dict):
+                    chit_details = viewdata.get("chitDetails", {})
+                    contact_raw = chit_details.get("Contact Number", "") or chit_details.get("ContactNumber", "") or chit_details.get("contact Number", "")
+                    if contact_raw:
+                        print(f"[ContactMap] ℹ️ {cf}: contactNumber found in viewdata: '{contact_raw}'")
+            except Exception as e:
+                print(f"[ContactMap] ⚠️ {cf}: viewdata fallback failed: {e}")
+
         contact = str(contact_raw).strip().replace(" ", "")
         # Handle multiple numbers separated by , or /
         contact_parts = [c.strip() for c in contact.replace("/", ",").split(",") if c.strip()]
@@ -922,7 +940,13 @@ def _build_contact_chit_map():
                 if not any(e["file"] == cf and e["role"] == "owner" for e in mapping[clean]):
                     mapping[clean].append({"file": cf, "chitName": chit_name, "role": "owner"})
 
-        print(f"[ContactMap] {cf} → contactNumber='{contact_raw}' → owners={owner_phones}")
+            elif clean:
+                print(f"[ContactMap] ⚠️ {cf}: number '{cp}' normalized to '{clean}' (too short, skipped)")
+
+        if not owner_phones:
+            print(f"[ContactMap] ⚠️ {cf} → contactNumber='{contact_raw}' → NO valid owner phones!")
+        else:
+            print(f"[ContactMap] {cf} → contactNumber='{contact_raw}' → owners={owner_phones}")
 
         # Map members (MobileNumber from chitMembers)
         members = data.get("members", [])
@@ -1139,18 +1163,22 @@ def _handle_bot_message(from_number, text):
             )
             return
 
-        # ---- SESSION TIMEOUT: 5 min inactivity → expire session ----
+        # ---- SESSION TIMEOUT: 3 min inactivity → expire session ----
         if sess and sess.get("last_activity"):
             elapsed = time.time() - sess["last_activity"]
             if elapsed > _SESSION_TIMEOUT:
                 del _bot_sessions[from_number]
                 sess = {}
-                # If user sent "hi", let it flow through; otherwise notify timeout
-                if text_lower not in ("hi", "hello", "hey", "hii", "hai", "start", "reset", "menu"):
+                # If user sent "hi" or interactive button, let it flow through
+                # For interactive buttons (chit_, cmd_), auto-restart by treating as "hi"
+                if text_lower not in ("hi", "hello", "hey", "hii", "hai", "start", "reset", "menu") and not text_lower.startswith("chit_") and not text_lower.startswith("cmd_"):
                     send_whatsapp_message(from_number,
                         "⏳ Your session has expired due to inactivity (3 min).\n\nSend *hi* to start again."
                     )
                     return
+                # For chit_ and cmd_ buttons after timeout, auto-restart as "hi"
+                if text_lower.startswith("chit_") or text_lower.startswith("cmd_"):
+                    text_lower = "hi"
 
         # ---- RESET: hi / hello / start → show chit list ----
         if text_lower in ("hi", "hello", "hey", "hii", "hai", "start", "reset", "menu"):
