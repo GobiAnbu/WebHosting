@@ -1474,6 +1474,11 @@ def _handle_bot_message(from_number, text):
             if text_lower == "cmd_reminder":
                 info = gs_get_chit_number(cf)
                 chit_n = info.get("chitName", cf.replace(".xlsx", ""))
+                conducted = str(info.get("conducted", "")).strip().lower()
+                if conducted == "no":
+                    send_whatsapp_message(from_number, f"📅 *{chit_n}* — Chit is not conducted for this month.")
+                    _send_command_menu(from_number, chit_name, "What would you like to do next?")
+                    return
                 amount = info.get("amountPerPerson", "-")
                 gpay = info.get("gpay", "-")
                 reply = (
