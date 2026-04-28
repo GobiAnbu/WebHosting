@@ -275,7 +275,7 @@ function handleGetMembers(fileName) {
   for (var i = 1; i < data.length; i++) {
     var withdraw = withdrawIdx >= 0 ? String(data[i][withdrawIdx]).trim().toLowerCase() : "no";
     var name = data[i][nameIdx];
-    if (withdraw !== "Yes" && name && String(name).trim()) {
+    if (withdraw !== "yes" && name && String(name).trim()) {
       members.push({
         name: String(name).trim(),
         mobile: String(data[i][mobileIdx]).trim()
@@ -472,7 +472,7 @@ function handleGetAllChitData(fileName) {
         var m = { name: String(name).trim(), mobile: String(mobile).trim() };
         members.push(m);
         var withdraw = withdrawIdx >= 0 ? String(mData[i][withdrawIdx]).trim().toLowerCase() : "no";
-        if (withdraw !== "Yes") activeMembers.push(m);
+        if (withdraw !== "yes") activeMembers.push(m);
       }
     }
   }
@@ -705,7 +705,7 @@ function _extractFileData(ss) {
         var m = { name: String(name).trim(), mobile: String(mobile).trim() };
         members.push(m);
         var withdraw = withdrawIdx >= 0 ? String(mData[i][withdrawIdx]).trim().toLowerCase() : "no";
-        if (withdraw !== "Yes") activeMembers.push(m);
+        if (withdraw !== "yes") activeMembers.push(m);
       }
     }
   }

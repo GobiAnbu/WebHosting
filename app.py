@@ -301,6 +301,7 @@ def _send_member_menu(phone, header_text, body_text):
                 "rows": [
                     {"id": "cmd_details", "title": "📋 Chit Details"},
                     {"id": "cmd_month_status", "title": "📅 Current Month Status"},
+                    {"id": "cmd_my_payment", "title": "💳 My Payment History"},
                     {"id": "cmd_change", "title": "🔄 Change Chit"},
                 ]
             }]
@@ -1018,8 +1019,13 @@ def _build_contact_chit_map():
                         mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "owner"})
                 else:
                     # This person is only a member of THIS chit — add as member
-                    if not any(e["file"] == cf for e in mapping[member_clean]):
-                        mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "member", "memberName": member.get("name", "")})
+                    existing = next((e for e in mapping[member_clean] if e["file"] == cf), None)
+                    if existing:
+                        # Same phone, same chit — append this member name to the list
+                        if member.get("name", "") not in existing.get("memberNames", []):
+                            existing.setdefault("memberNames", [existing.get("memberName", "")]).append(member.get("name", ""))
+                    else:
+                        mapping[member_clean].append({"file": cf, "chitName": chit_name, "role": "member", "memberName": member.get("name", ""), "memberNames": [member.get("name", "")]})
 
     # Log final mapping summary
     for phone, entries in mapping.items():
@@ -1264,15 +1270,17 @@ def _handle_bot_message(from_number, text):
                 m = matched[0]
                 role = m.get("role", "owner")
                 member_name = m.get("memberName", "")
-                _set_bot_session(from_number, {"step": "ready", "chitFile": m["file"], "chitName": m["chitName"], "role": role, "memberName": member_name})
+                member_names = m.get("memberNames", [member_name] if member_name else [])
+                _set_bot_session(from_number, {"step": "ready", "chitFile": m["file"], "chitName": m["chitName"], "role": role, "memberName": member_name, "memberNames": member_names})
                 if role == "member":
-                    welcome_msg = f"Your chit: *{m['chitName']}*\n\nHi *{member_name}*! Select an option below."
+                    names_display = " & ".join(f"*{n}*" for n in member_names) if member_names else f"*{member_name}*"
+                    welcome_msg = f"Your chit: *{m['chitName']}*\n\nHi {names_display}! Select an option below."
                     _send_member_menu(from_number, "👋 Welcome!", welcome_msg)
                 else:
                     _send_command_menu(from_number, "👋 Welcome!", f"Your chit: *{m['chitName']}*\n\nSelect an option or type your *name* for payment history.")
                 return
 
-            _set_bot_session(from_number, {"step": "select_chit", "chitFiles": [m["file"] for m in matched], "chitNames": [m["chitName"] for m in matched], "chitRoles": [m.get("role", "owner") for m in matched], "chitMemberNames": [m.get("memberName", "") for m in matched]})
+            _set_bot_session(from_number, {"step": "select_chit", "chitFiles": [m["file"] for m in matched], "chitNames": [m["chitName"] for m in matched], "chitRoles": [m.get("role", "owner") for m in matched], "chitMemberNames": [m.get("memberName", "") for m in matched], "chitMemberNamesList": [m.get("memberNames", [m.get("memberName", "")]) for m in matched]})
             _send_chit_selection_list(from_number, matched)
             return
 
@@ -1285,14 +1293,17 @@ def _handle_bot_message(from_number, text):
                 chit_names = sess.get("chitNames", [])
                 chit_roles = sess.get("chitRoles", [])
                 chit_member_names = sess.get("chitMemberNames", [])
+                chit_member_names_list = sess.get("chitMemberNamesList", [])
                 if 0 <= idx < len(chit_files):
                     selected = chit_files[idx]
                     chit_name = chit_names[idx] if idx < len(chit_names) else selected.replace(".xlsx", "")
                     role = chit_roles[idx] if idx < len(chit_roles) else "owner"
                     member_name = chit_member_names[idx] if idx < len(chit_member_names) else ""
-                    _set_bot_session(from_number, {"step": "ready", "chitFile": selected, "chitName": chit_name, "role": role, "memberName": member_name})
+                    member_names = chit_member_names_list[idx] if idx < len(chit_member_names_list) else [member_name] if member_name else []
+                    _set_bot_session(from_number, {"step": "ready", "chitFile": selected, "chitName": chit_name, "role": role, "memberName": member_name, "memberNames": member_names})
                     if role == "member":
-                        _send_member_menu(from_number, f"✅ {chit_name}", f"You selected *{chit_name}*\n\nHi *{member_name}*! Select an option below.")
+                        names_display = " & ".join(f"*{n}*" for n in member_names) if member_names else f"*{member_name}*"
+                        _send_member_menu(from_number, f"✅ {chit_name}", f"You selected *{chit_name}*\n\nHi {names_display}! Select an option below.")
                     else:
                         _send_command_menu(from_number, f"✅ {chit_name}", f"You selected *{chit_name}*\n\nSelect an option or type your *name* for payment history.")
                     return
@@ -1486,6 +1497,29 @@ def _handle_bot_message(from_number, text):
                 )
                 send_whatsapp_message(from_number, reply)
                 _send_command_menu(from_number, chit_name, "What would you like to do next?")
+                return
+
+            if text_lower == "cmd_my_payment":
+                member_names = sess.get("memberNames", [])
+                member_name = sess.get("memberName", "")
+                if not member_names and member_name:
+                    member_names = [member_name]
+                if member_names:
+                    found_any = False
+                    for name in member_names:
+                        result = _search_member_in_chit(name, cf)
+                        if result:
+                            send_whatsapp_message(from_number, result)
+                            found_any = True
+                    if not found_any:
+                        names_str = ", ".join(member_names)
+                        send_whatsapp_message(from_number, f"⚠️ No payment history found for *{names_str}*.")
+                else:
+                    send_whatsapp_message(from_number, "⚠️ Member name not found. Please type your name to search.")
+                if user_role == "member":
+                    _send_member_menu(from_number, f"💳 {chit_name}", "What would you like to do next?")
+                else:
+                    _send_command_menu(from_number, f"💳 {chit_name}", "What would you like to do next?")
                 return
 
             if text_lower == "cmd_change":
@@ -1796,7 +1830,77 @@ def _search_member_in_chit(name, chit_file):
             else:
                 result += "🎉 All months paid!\n"
 
-            result += f"\n💳 Amount/Month: ₹{info.get('amountPerPerson', '-')}\n"
+            # Calculate due amount by looking up actual Amount Per Person for each unpaid month
+            due_amount = 0
+            chit_rows = view_data.get("chitNumberRows", [])
+            if unpaid_months and chit_rows:
+                from datetime import datetime
+                date_formats = ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%b-%Y", "%B-%Y", "%b %Y", "%B %Y", "%m/%d/%Y", "%d-%m-%y"]
+                # Find the date column and amount column in chitNumberRows
+                date_col = None
+                amount_col = None
+                if chit_rows:
+                    row_keys = list(chit_rows[0].keys())
+                    for key in row_keys:
+                        kl = key.lower().strip()
+                        if kl in ("chit month", "month", "date", "chitmonth"):
+                            date_col = key
+                        if kl in ("amount per person", "amountperperson", "amount"):
+                            amount_col = key
+
+                if date_col and amount_col:
+                    # Build a map: month-year → amount per person
+                    month_amount_map = {}  # "Jan-2026" style key → amount
+                    for row in chit_rows:
+                        raw_date = str(row.get(date_col, "")).strip()
+                        if not raw_date:
+                            continue
+                        # Try to parse and normalize to "Mon-YYYY" format
+                        month_key = None
+                        for fmt in date_formats:
+                            try:
+                                dt = datetime.strptime(raw_date, fmt)
+                                month_key = dt.strftime("%b-%Y")  # e.g. "Jan-2026"
+                                break
+                            except (ValueError, Exception):
+                                continue
+                        if not month_key:
+                            month_key = raw_date  # fallback to raw value
+                        try:
+                            amt = float(str(row.get(amount_col, 0)).replace(",", "").strip())
+                        except (ValueError, TypeError):
+                            amt = 0
+                        month_amount_map[month_key] = amt
+
+                    # Sum amounts for each unpaid month
+                    for unpaid_month in unpaid_months:
+                        # Try to match unpaid_month (from chitMembers header) with chitNumberRows
+                        matched_amount = None
+                        # Direct match
+                        if unpaid_month in month_amount_map:
+                            matched_amount = month_amount_map[unpaid_month]
+                        else:
+                            # Try parsing unpaid_month and matching by month/year
+                            for fmt in date_formats:
+                                try:
+                                    dt = datetime.strptime(unpaid_month.strip(), fmt)
+                                    key = dt.strftime("%b-%Y")
+                                    if key in month_amount_map:
+                                        matched_amount = month_amount_map[key]
+                                        break
+                                except (ValueError, Exception):
+                                    continue
+                        if matched_amount:
+                            due_amount += matched_amount
+
+            # Fallback: if no match found, use current amountPerPerson × unpaid count
+            if due_amount == 0 and unpaid_count > 0:
+                try:
+                    due_amount = int(float(info.get('amountPerPerson', 0))) * unpaid_count
+                except (ValueError, TypeError):
+                    due_amount = 0
+
+            result += f"\n💳 Due Amount: ₹{int(due_amount)}\n"
             result += f"📱 GPay: {info.get('gpay', '-')}"
             return result
 
