@@ -1219,23 +1219,24 @@ def set_wa_web_enabled():
 # ==================== BOT CONVERSATION LOGIC ====================
 
 def _show_payment_member_page(from_number, chit_members, cf, chit_name, user_role, page=0):
-    """Show a paginated list of members for payment update (max 9 per page + Next)."""
-    page_size = 9
+    """Show a paginated list of members for payment update (max 10 rows total)."""
+    page_size = 8
     start = page * page_size
     end = start + page_size
     page_members = chit_members[start:end]
 
+    remaining = chit_members[end:]
+    has_prev = page > 0
+    has_next = any(m.get("Name", m.get("name", "")) for m in remaining)
+
     rows = []
-    if page > 0:
+    if has_prev:
         rows.append({"id": f"pay_prev_page_{page - 1}", "title": "◀ Previous"})
     for i, m in enumerate(page_members):
         name = m.get("Name", m.get("name", ""))
         if name:
             rows.append({"id": f"pay_name_{start + i}", "title": str(name)[:24]})
-    # Only show Next if there are actual members with names on subsequent pages
-    remaining = chit_members[end:]
-    has_more = any(m.get("Name", m.get("name", "")) for m in remaining)
-    if has_more:
+    if has_next:
         rows.append({"id": f"pay_next_page_{page + 1}", "title": "Next ▶"})
 
     if rows:
@@ -1259,20 +1260,21 @@ def _show_payment_member_page(from_number, chit_members, cf, chit_name, user_rol
         send_whatsapp_message(from_number, "⚠️ No members available.")
 
 def _show_payment_month_page(from_number, all_month_entries, cf, chit_name, user_role, selected_name, page=0):
-    """Show a paginated list of months for payment update (max 9 per page + Next)."""
-    page_size = 9
+    """Show a paginated list of months for payment update (max 10 rows total)."""
+    page_size = 8
     start = page * page_size
     end = start + page_size
     page_months = all_month_entries[start:end]
 
+    has_prev = page > 0
+    has_next = len(all_month_entries) > end
+
     rows = []
-    if page > 0:
+    if has_prev:
         rows.append({"id": f"pay_month_prev_page_{page - 1}", "title": "◀ Previous"})
     for i, entry in enumerate(page_months):
         rows.append({"id": f"pay_month_{start + i}", "title": entry["key"][:24], "description": entry["status"][:72] if entry["status"] else "Not set"})
-    # Only show Next if there are actual month entries on subsequent pages
-    has_more = len(all_month_entries) > end
-    if has_more:
+    if has_next:
         rows.append({"id": f"pay_month_next_page_{page + 1}", "title": "Next ▶"})
 
     if rows:
