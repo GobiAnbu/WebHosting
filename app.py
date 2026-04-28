@@ -1407,8 +1407,29 @@ def _handle_bot_message(from_number, text):
                                 break
 
                     if current_row:
-                        # Build reply, skip discount, format month as MMM-YYYY
-                        reply = f"📅 *{chit_n}* — Current Month Status\n━━━━━━━━━━━━━━━━━━━━\n"
+                        # Check if chit is conducted
+                        conducted_val = ""
+                        for k in current_row:
+                            if k.lower().strip() == "conducted":
+                                conducted_val = str(current_row[k]).strip().lower()
+                                break
+
+                        if conducted_val == "no":
+                            # Format month name
+                            month_display = now.strftime("%B %Y")
+                            chit_month_val = str(current_row.get(date_col, "")).strip() if date_col else ""
+                            if chit_month_val:
+                                for fmt in date_formats:
+                                    try:
+                                        dt = datetime.strptime(chit_month_val, fmt)
+                                        month_display = dt.strftime("%b-%Y")
+                                        break
+                                    except (ValueError, Exception):
+                                        continue
+                            reply = f"📅 *{chit_n}* — Chit is not conducted for *{month_display}*."
+                        else:
+                            # Build reply, skip discount, format month as MMM-YYYY
+                            reply = f"📅 *{chit_n}* — Current Month Status\n━━━━━━━━━━━━━━━━━━━━\n"
                         icons = {"Chit Month": "📅", "Chit Number": "📌", "Conducted": "✅", "Taken By": "🎯", "Chit Amount": "💰", "Amount Per Person": "💳", "Discount": "🏷️", "Discount Amount": "🏷️"}
                         skip_cols = []
                         for key, val in current_row.items():
@@ -1474,6 +1495,11 @@ def _handle_bot_message(from_number, text):
             if text_lower == "cmd_tomorrow":
                 info = gs_get_chit_number(cf)
                 chit_n = info.get("chitName", cf.replace(".xlsx", ""))
+                conducted = str(info.get("conducted", "")).strip().lower()
+                if conducted == "yes":
+                    send_whatsapp_message(from_number, f"✅ *{chit_n}* — Chit has already been conducted for this month.")
+                    _send_command_menu(from_number, chit_name, "What would you like to do next?")
+                    return
                 chit_num = info.get("chitNumber", "-")
                 contact = info.get("contactNumber", "-")
                 tomorrow = date.today() + timedelta(days=1)
