@@ -2201,3 +2201,5 @@ def _search_member_in_chit(name, chit_file):
         pass
     return None
 
+if __name__ == "__main__":
+    app.run(debug=True, port=5001)

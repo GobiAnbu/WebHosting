@@ -295,8 +295,8 @@
             let bidVal = 0;
             let label = '';
             if (i === 1) {
-                bidVal = total;
-                label = ' (Company)';
+                bidVal = 0;
+                label = ' (Company) No Bid';
             } else {
                 // Formula: chitAmount * interest * remainingMonth / 100
                 const remaining = duration - i;
@@ -380,7 +380,7 @@
                     const month = idx + 1;
                     const amt = formatCurrency(parseInt(input.value) || 0);
                     if (idx === 0) {
-                        bidTableText += `▪️ Month ${month}: ₹${amt} _(Company)_\n`;
+                        bidTableText += `▪️ Month ${month}: No Bid _(Company)_\n`;
                     } else {
                         bidTableText += `▪️ Month ${month}: ₹${amt}\n`;
                     }
