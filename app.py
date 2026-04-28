@@ -21,7 +21,7 @@ from google_sheets_api import (
 
 import threading
 
-from datetime import timedelta, date
+from datetime import timedelta, date, datetime
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chit-fund-secret-key-2026")
@@ -1254,6 +1254,43 @@ def _show_payment_member_page(from_number, chit_members, cf, chit_name, user_rol
     else:
         send_whatsapp_message(from_number, "⚠️ No members available.")
 
+def _show_payment_month_page(from_number, all_month_entries, cf, chit_name, user_role, selected_name, page=0):
+    """Show a paginated list of months for payment update (max 9 per page + Next)."""
+    page_size = 9
+    start = page * page_size
+    end = start + page_size
+    page_months = all_month_entries[start:end]
+    has_more = len(all_month_entries) > end
+
+    rows = []
+    for i, entry in enumerate(page_months):
+        rows.append({"id": f"pay_month_{start + i}", "title": entry["key"][:24], "description": entry["status"][:72] if entry["status"] else "Not set"})
+    if has_more:
+        rows.append({"id": f"pay_month_next_page_{page + 1}", "title": "Next ▶"})
+
+    if rows:
+        month_keys = [e["key"] for e in all_month_entries]
+        _set_bot_session(from_number, {
+            "step": "payment_select_month",
+            "chitFile": cf,
+            "chitName": chit_name,
+            "role": user_role,
+            "selectedName": selected_name,
+            "monthKeys": month_keys,
+            "allMonthEntries": all_month_entries
+        })
+        send_whatsapp_interactive(from_number, {
+            "type": "list",
+            "header": {"type": "text", "text": f"💰 {selected_name}"},
+            "body": {"text": f"Select a month to update (page {page + 1}):"},
+            "action": {
+                "button": "Select Month",
+                "sections": [{"title": "Months", "rows": rows}]
+            }
+        })
+    else:
+        send_whatsapp_message(from_number, "⚠️ No months available.")
+
 def _handle_bot_message(from_number, text):
     """Conversational bot: hi → pick chit → then answer questions."""
     try:
@@ -1677,36 +1714,31 @@ def _handle_bot_message(from_number, text):
                 # Non-month columns to skip
                 skip_cols = {"name", "s.no", "s.no.", "sno", "sl", "sl.no", "sl.no.", "mobilenumber", "mobile",
                              "phone", "number", "contact", "withdraw", "remarks", "remark", "note", "notes"}
-                # Collect all month columns with their status
-                month_rows = []
+                # Collect all month columns with their status, filtered up to current month
+                now = datetime.now()
+                current_year = now.year
+                current_month = now.month
+                all_month_entries = []
                 for key, val in selected_member.items():
                     if key.lower().strip() in skip_cols:
                         continue
+                    # Try to parse month from column header (e.g. "Jan 2026", "January 2026", "Jan-2026", "01-2026", "Apr")
+                    include = True
+                    for fmt in ("%b %Y", "%B %Y", "%b-%Y", "%B-%Y", "%m-%Y", "%b %y", "%B %y"):
+                        try:
+                            parsed = datetime.strptime(key.strip(), fmt)
+                            if (parsed.year, parsed.month) > (current_year, current_month):
+                                include = False
+                            break
+                        except ValueError:
+                            continue
+                    if not include:
+                        continue
                     status = str(val).strip()
-                    label = f"{key}: {status}" if status else f"{key}: -"
-                    if len(month_rows) < 10:
-                        month_rows.append({"id": f"pay_month_{len(month_rows)}", "title": key[:24], "description": status[:72] if status else "Not set"})
+                    all_month_entries.append({"key": key, "status": status})
 
-                if month_rows:
-                    # Store month keys for lookup later
-                    month_keys = [r["title"] for r in month_rows]
-                    _set_bot_session(from_number, {
-                        "step": "payment_select_month",
-                        "chitFile": cf,
-                        "chitName": chit_name,
-                        "role": sess.get("role", "owner"),
-                        "selectedName": selected_name,
-                        "monthKeys": month_keys
-                    })
-                    send_whatsapp_interactive(from_number, {
-                        "type": "list",
-                        "header": {"type": "text", "text": f"💰 {selected_name}"},
-                        "body": {"text": "Select a month to update:"},
-                        "action": {
-                            "button": "Select Month",
-                            "sections": [{"title": "Months", "rows": month_rows}]
-                        }
-                    })
+                if all_month_entries:
+                    _show_payment_month_page(from_number, all_month_entries, cf, chit_name, sess.get("role", "owner"), selected_name, page=0)
                 else:
                     send_whatsapp_message(from_number, "⚠️ No month columns found for this member.")
             else:
@@ -1721,7 +1753,15 @@ def _handle_bot_message(from_number, text):
             month_keys = sess.get("monthKeys", [])
 
             selected_month = ""
-            if text_lower.startswith("pay_month_"):
+            if text_lower.startswith("pay_month_next_page_"):
+                try:
+                    next_page = int(text_lower.replace("pay_month_next_page_", ""))
+                    all_month_entries = sess.get("allMonthEntries", [])
+                    _show_payment_month_page(from_number, all_month_entries, cf, chit_name, sess.get("role", "owner"), selected_name, page=next_page)
+                except ValueError:
+                    send_whatsapp_message(from_number, "⚠️ Invalid selection. Please try again.")
+                return
+            elif text_lower.startswith("pay_month_"):
                 try:
                     idx = int(text_lower.replace("pay_month_", ""))
                     selected_month = month_keys[idx]
