@@ -1218,6 +1218,42 @@ def set_wa_web_enabled():
 
 # ==================== BOT CONVERSATION LOGIC ====================
 
+def _show_payment_member_page(from_number, chit_members, cf, chit_name, user_role, page=0):
+    """Show a paginated list of members for payment update (max 9 per page + Next)."""
+    page_size = 9
+    start = page * page_size
+    end = start + page_size
+    page_members = chit_members[start:end]
+    has_more = len(chit_members) > end
+
+    rows = []
+    for i, m in enumerate(page_members):
+        name = m.get("Name", m.get("name", ""))
+        if name:
+            rows.append({"id": f"pay_name_{start + i}", "title": str(name)[:24]})
+    if has_more:
+        rows.append({"id": f"pay_next_page_{page + 1}", "title": "Next ▶"})
+
+    if rows:
+        _set_bot_session(from_number, {
+            "step": "payment_select_name",
+            "chitFile": cf,
+            "chitName": chit_name,
+            "role": user_role,
+            "chitMembers": chit_members
+        })
+        send_whatsapp_interactive(from_number, {
+            "type": "list",
+            "header": {"type": "text", "text": "💰 Update Payment"},
+            "body": {"text": f"Select a member to update payment status (page {page + 1}):"},
+            "action": {
+                "button": "Select Member",
+                "sections": [{"title": "Members", "rows": rows}]
+            }
+        })
+    else:
+        send_whatsapp_message(from_number, "⚠️ No members available.")
+
 def _handle_bot_message(from_number, text):
     """Conversational bot: hi → pick chit → then answer questions."""
     try:
@@ -1560,32 +1596,7 @@ def _handle_bot_message(from_number, text):
                 if not chit_members:
                     send_whatsapp_message(from_number, "⚠️ No members found in this chit.")
                     return
-                rows = []
-                member_list = []
-                for i, m in enumerate(chit_members):
-                    name = m.get("Name", m.get("name", ""))
-                    if name and len(rows) < 10:  # WhatsApp max 10 rows
-                        rows.append({"id": f"pay_name_{i}", "title": str(name)[:24]})
-                        member_list.append(m)
-                if rows:
-                    _set_bot_session(from_number, {
-                        "step": "payment_select_name",
-                        "chitFile": cf,
-                        "chitName": chit_name,
-                        "role": user_role,
-                        "chitMembers": chit_members
-                    })
-                    send_whatsapp_interactive(from_number, {
-                        "type": "list",
-                        "header": {"type": "text", "text": "💰 Update Payment"},
-                        "body": {"text": "Select a member to update payment status:"},
-                        "action": {
-                            "button": "Select Member",
-                            "sections": [{"title": "Members", "rows": rows}]
-                        }
-                    })
-                else:
-                    send_whatsapp_message(from_number, "⚠️ No members available.")
+                _show_payment_member_page(from_number, chit_members, cf, chit_name, user_role, page=0)
                 return
 
             if text_lower == "cmd_change":
@@ -1639,7 +1650,14 @@ def _handle_bot_message(from_number, text):
 
             selected_name = ""
             selected_member = None
-            if text_lower.startswith("pay_name_"):
+            if text_lower.startswith("pay_next_page_"):
+                try:
+                    next_page = int(text_lower.replace("pay_next_page_", ""))
+                    _show_payment_member_page(from_number, chit_members, cf, chit_name, sess.get("role", "owner"), page=next_page)
+                except ValueError:
+                    send_whatsapp_message(from_number, "⚠️ Invalid selection. Please try again.")
+                return
+            elif text_lower.startswith("pay_name_"):
                 try:
                     idx = int(text_lower.replace("pay_name_", ""))
                     selected_member = chit_members[idx]
