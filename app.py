@@ -1226,6 +1226,8 @@ def _show_payment_member_page(from_number, chit_members, cf, chit_name, user_rol
     page_members = chit_members[start:end]
 
     rows = []
+    if page > 0:
+        rows.append({"id": f"pay_prev_page_{page - 1}", "title": "◀ Previous"})
     for i, m in enumerate(page_members):
         name = m.get("Name", m.get("name", ""))
         if name:
@@ -1264,6 +1266,8 @@ def _show_payment_month_page(from_number, all_month_entries, cf, chit_name, user
     page_months = all_month_entries[start:end]
 
     rows = []
+    if page > 0:
+        rows.append({"id": f"pay_month_prev_page_{page - 1}", "title": "◀ Previous"})
     for i, entry in enumerate(page_months):
         rows.append({"id": f"pay_month_{start + i}", "title": entry["key"][:24], "description": entry["status"][:72] if entry["status"] else "Not set"})
     # Only show Next if there are actual month entries on subsequent pages
@@ -1689,10 +1693,10 @@ def _handle_bot_message(from_number, text):
 
             selected_name = ""
             selected_member = None
-            if text_lower.startswith("pay_next_page_"):
+            if text_lower.startswith("pay_next_page_") or text_lower.startswith("pay_prev_page_"):
                 try:
-                    next_page = int(text_lower.replace("pay_next_page_", ""))
-                    _show_payment_member_page(from_number, chit_members, cf, chit_name, sess.get("role", "owner"), page=next_page)
+                    nav_page = int(text_lower.split("_")[-1])
+                    _show_payment_member_page(from_number, chit_members, cf, chit_name, sess.get("role", "owner"), page=nav_page)
                 except ValueError:
                     send_whatsapp_message(from_number, "⚠️ Invalid selection. Please try again.")
                 return
@@ -1755,11 +1759,11 @@ def _handle_bot_message(from_number, text):
             month_keys = sess.get("monthKeys", [])
 
             selected_month = ""
-            if text_lower.startswith("pay_month_next_page_"):
+            if text_lower.startswith("pay_month_next_page_") or text_lower.startswith("pay_month_prev_page_"):
                 try:
-                    next_page = int(text_lower.replace("pay_month_next_page_", ""))
+                    nav_page = int(text_lower.split("_")[-1])
                     all_month_entries = sess.get("allMonthEntries", [])
-                    _show_payment_month_page(from_number, all_month_entries, cf, chit_name, sess.get("role", "owner"), selected_name, page=next_page)
+                    _show_payment_month_page(from_number, all_month_entries, cf, chit_name, sess.get("role", "owner"), selected_name, page=nav_page)
                 except ValueError:
                     send_whatsapp_message(from_number, "⚠️ Invalid selection. Please try again.")
                 return
