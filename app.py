@@ -280,6 +280,7 @@ def _send_command_menu(phone, header_text, body_text):
                     {"id": "cmd_details", "title": "📋 Chit Details"},
                     {"id": "cmd_month_status", "title": "📅 Current Month Status"},
                     {"id": "cmd_update", "title": "📊 Update Chit Details"},
+                    {"id": "cmd_payment", "title": "💰 Update Payment"},
                     {"id": "cmd_reminder", "title": "🔔 Payment Reminder"},
                     {"id": "cmd_tomorrow", "title": "📢 Chit Tomorrow"},
                     {"id": "cmd_change", "title": "🔄 Change Chit"},
@@ -1322,7 +1323,7 @@ def _handle_bot_message(from_number, text):
             user_role = sess.get("role", "owner")
 
             # Block members from owner-only commands
-            if user_role == "member" and text_lower in ("cmd_update", "cmd_reminder", "cmd_tomorrow"):
+            if user_role == "member" and text_lower in ("cmd_update", "cmd_payment", "cmd_reminder", "cmd_tomorrow"):
                 send_whatsapp_message(from_number, "🚫 This option is only available for the chit owner.")
                 return
 
@@ -1547,6 +1548,41 @@ def _handle_bot_message(from_number, text):
                     _send_command_menu(from_number, f"💳 {chit_name}", "What would you like to do next?")
                 return
 
+            if text_lower == "cmd_payment":
+                # Step 1: Show member list to select who to update payment for
+                view_data = gs_get_chit_view_data(cf)
+                chit_members = view_data.get("chitMembers", [])
+                if not chit_members:
+                    send_whatsapp_message(from_number, "⚠️ No members found in this chit.")
+                    return
+                rows = []
+                member_list = []
+                for i, m in enumerate(chit_members):
+                    name = m.get("Name", m.get("name", ""))
+                    if name and len(rows) < 10:  # WhatsApp max 10 rows
+                        rows.append({"id": f"pay_name_{i}", "title": str(name)[:24]})
+                        member_list.append(m)
+                if rows:
+                    _set_bot_session(from_number, {
+                        "step": "payment_select_name",
+                        "chitFile": cf,
+                        "chitName": chit_name,
+                        "role": user_role,
+                        "chitMembers": chit_members
+                    })
+                    send_whatsapp_interactive(from_number, {
+                        "type": "list",
+                        "header": {"type": "text", "text": "💰 Update Payment"},
+                        "body": {"text": "Select a member to update payment status:"},
+                        "action": {
+                            "button": "Select Member",
+                            "sections": [{"title": "Members", "rows": rows}]
+                        }
+                    })
+                else:
+                    send_whatsapp_message(from_number, "⚠️ No members available.")
+                return
+
             if text_lower == "cmd_change":
                 _set_bot_session(from_number, {})
                 _handle_bot_message(from_number, "hi")
@@ -1588,6 +1624,168 @@ def _handle_bot_message(from_number, text):
                     send_whatsapp_message(from_number, "⚠️ No members available.")
                 return
 
+            return
+
+        # ---- STEP: Payment update flow - name selected, show unpaid months ----
+        if sess.get("step") == "payment_select_name":
+            cf = sess.get("chitFile", "")
+            chit_name = sess.get("chitName", "")
+            chit_members = sess.get("chitMembers", [])
+
+            selected_name = ""
+            selected_member = None
+            if text_lower.startswith("pay_name_"):
+                try:
+                    idx = int(text_lower.replace("pay_name_", ""))
+                    selected_member = chit_members[idx]
+                    selected_name = selected_member.get("Name", selected_member.get("name", ""))
+                except (ValueError, IndexError):
+                    pass
+            else:
+                # Typed name directly
+                for m in chit_members:
+                    name = m.get("Name", m.get("name", ""))
+                    if name and text_lower in str(name).lower():
+                        selected_name = name
+                        selected_member = m
+                        break
+
+            if selected_name and selected_member:
+                # Non-month columns to skip
+                skip_cols = {"name", "s.no", "s.no.", "sno", "sl", "sl.no", "sl.no.", "mobilenumber", "mobile",
+                             "phone", "number", "contact", "withdraw", "remarks", "remark", "note", "notes"}
+                # Collect all month columns with their status
+                month_rows = []
+                for key, val in selected_member.items():
+                    if key.lower().strip() in skip_cols:
+                        continue
+                    status = str(val).strip()
+                    label = f"{key}: {status}" if status else f"{key}: -"
+                    if len(month_rows) < 10:
+                        month_rows.append({"id": f"pay_month_{len(month_rows)}", "title": key[:24], "description": status[:72] if status else "Not set"})
+
+                if month_rows:
+                    # Store month keys for lookup later
+                    month_keys = [r["title"] for r in month_rows]
+                    _set_bot_session(from_number, {
+                        "step": "payment_select_month",
+                        "chitFile": cf,
+                        "chitName": chit_name,
+                        "role": sess.get("role", "owner"),
+                        "selectedName": selected_name,
+                        "monthKeys": month_keys
+                    })
+                    send_whatsapp_interactive(from_number, {
+                        "type": "list",
+                        "header": {"type": "text", "text": f"💰 {selected_name}"},
+                        "body": {"text": "Select a month to update:"},
+                        "action": {
+                            "button": "Select Month",
+                            "sections": [{"title": "Months", "rows": month_rows}]
+                        }
+                    })
+                else:
+                    send_whatsapp_message(from_number, "⚠️ No month columns found for this member.")
+            else:
+                send_whatsapp_message(from_number, "⚠️ Could not find that member. Please select from the list.")
+            return
+
+        # ---- STEP: Payment update flow - month selected, ask Paid/Not Paid ----
+        if sess.get("step") == "payment_select_month":
+            cf = sess.get("chitFile", "")
+            chit_name = sess.get("chitName", "")
+            selected_name = sess.get("selectedName", "")
+            month_keys = sess.get("monthKeys", [])
+
+            selected_month = ""
+            if text_lower.startswith("pay_month_"):
+                try:
+                    idx = int(text_lower.replace("pay_month_", ""))
+                    selected_month = month_keys[idx]
+                except (ValueError, IndexError):
+                    pass
+            else:
+                # Typed month directly
+                for mk in month_keys:
+                    if text_lower in mk.lower():
+                        selected_month = mk
+                        break
+
+            if selected_month:
+                _set_bot_session(from_number, {
+                    "step": "payment_select_status",
+                    "chitFile": cf,
+                    "chitName": chit_name,
+                    "role": sess.get("role", "owner"),
+                    "selectedName": selected_name,
+                    "selectedMonth": selected_month
+                })
+                send_whatsapp_interactive(from_number, {
+                    "type": "list",
+                    "header": {"type": "text", "text": f"💰 {selected_name} — {selected_month}"},
+                    "body": {"text": f"Set payment status for *{selected_name}* for *{selected_month}*:"},
+                    "action": {
+                        "button": "Select Status",
+                        "sections": [{"title": "Status", "rows": [
+                            {"id": "pay_status_paid", "title": "✅ Paid"},
+                            {"id": "pay_status_notpaid", "title": "❌ Not Paid"},
+                        ]}]
+                    }
+                })
+            else:
+                send_whatsapp_message(from_number, "⚠️ Could not find that month. Please select from the list.")
+            return
+
+        # ---- STEP: Payment update flow - status selected, update Google Sheet ----
+        if sess.get("step") == "payment_select_status":
+            cf = sess.get("chitFile", "")
+            chit_name = sess.get("chitName", "")
+            selected_name = sess.get("selectedName", "")
+            selected_month = sess.get("selectedMonth", "")
+
+            status = ""
+            if text_lower == "pay_status_paid":
+                status = "Paid"
+            elif text_lower == "pay_status_notpaid":
+                status = "Not Paid"
+            elif text_lower in ("paid", "yes"):
+                status = "Paid"
+            elif text_lower in ("not paid", "notpaid", "no", "unpaid"):
+                status = "Not Paid"
+
+            if status:
+                try:
+                    # Call the updateMemberPayment API
+                    resp = requests.post(
+                        os.environ.get("APPS_SCRIPT_URL", ""),
+                        params={"action": "updateMemberPayment", "key": os.environ.get("APPS_SCRIPT_API_KEY", ""), "file": cf},
+                        json={"memberName": selected_name, "month": selected_month, "status": status},
+                        timeout=30
+                    )
+                    resp_data = resp.json()
+
+                    if resp_data.get("success"):
+                        print(f"[WA Bot] 💰 Payment update: file='{cf}', member='{selected_name}', month='{selected_month}', status='{status}', by=phone={from_number}")
+                        send_whatsapp_message(from_number,
+                            f"✅ Payment updated!\n\n"
+                            f"👤 Member: *{selected_name}*\n"
+                            f"📅 Month: *{selected_month}*\n"
+                            f"💰 Status: *{status}*"
+                        )
+                        # Refresh cache in background
+                        threading.Thread(target=_refresh_after_update, args=(cf,), daemon=True).start()
+                    else:
+                        error_msg = resp_data.get("error", "Unknown error")
+                        send_whatsapp_message(from_number, f"⚠️ Failed to update: {error_msg}")
+                except Exception as e:
+                    print(f"[WA Bot] Payment update error: {e}")
+                    send_whatsapp_message(from_number, "⚠️ Failed to update payment. Please try again.")
+
+                # Back to owner menu
+                _set_bot_session(from_number, {"step": "ready", "chitFile": cf, "chitName": chit_name, "role": sess.get("role", "owner")})
+                _send_command_menu(from_number, f"💰 {chit_name}", "What would you like to do next?")
+            else:
+                send_whatsapp_message(from_number, "⚠️ Please select *Paid* or *Not Paid* from the list.")
             return
 
         # ---- STEP: Update flow - name selected, ask for chit amount ----
