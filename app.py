@@ -1789,18 +1789,23 @@ def _search_member_in_chit(name, chit_file):
     name_lower = name.lower().strip()
     try:
         view_data = gs_get_chit_view_data(chit_file)
-        members_data = view_data.get("members", [])
+        # Use chitMembers (full table with month columns), NOT members (simple name+mobile list)
+        members_data = view_data.get("chitMembers", [])
         if not members_data:
             return None
+
+        # Non-month columns to skip when counting paid/unpaid
+        skip_cols = {"name", "s.no", "s.no.", "sno", "sl", "sl.no", "sl.no.", "mobilenumber", "mobile",
+                     "phone", "number", "contact", "withdraw", "remarks", "remark", "note", "notes"}
 
         for member in members_data:
             if not isinstance(member, dict):
                 continue
-            member_name = member.get("name", member.get("Name", member.get("NAME", "")))
+            member_name = member.get("Name", member.get("name", member.get("NAME", "")))
             if not member_name:
-                member_name = str(list(member.values())[0]) if member.values() else ""
+                continue
 
-            if not member_name or name_lower not in member_name.lower():
+            if name_lower not in str(member_name).lower():
                 continue
 
             info = gs_get_chit_number(chit_file)
@@ -1810,13 +1815,13 @@ def _search_member_in_chit(name, chit_file):
             unpaid_count = 0
             unpaid_months = []
             for key, val in member.items():
-                key_lower = key.lower()
-                if key_lower in ("name", "phone", "number", "sl", "sl.no", "s.no", "sno", "contact"):
+                key_lower = key.lower().strip()
+                if key_lower in skip_cols:
                     continue
                 status = str(val).strip().lower()
                 if status == "paid":
                     paid_count += 1
-                elif status and status != "":
+                elif status and status not in ("", "0", "-"):
                     unpaid_count += 1
                     unpaid_months.append(key)
 
@@ -1830,42 +1835,40 @@ def _search_member_in_chit(name, chit_file):
             else:
                 result += "🎉 All months paid!\n"
 
-            # Calculate due amount by looking up actual Amount Per Person for each unpaid month
+            # Calculate due amount by summing actual Amount Per Person for each unpaid month
             due_amount = 0
             chit_rows = view_data.get("chitNumberRows", [])
             if unpaid_months and chit_rows:
                 from datetime import datetime
                 date_formats = ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%b-%Y", "%B-%Y", "%b %Y", "%B %Y", "%m/%d/%Y", "%d-%m-%y"]
-                # Find the date column and amount column in chitNumberRows
+                # Find the date column and amount column
                 date_col = None
                 amount_col = None
-                if chit_rows:
-                    row_keys = list(chit_rows[0].keys())
-                    for key in row_keys:
-                        kl = key.lower().strip()
-                        if kl in ("chit month", "month", "date", "chitmonth"):
-                            date_col = key
-                        if kl in ("amount per person", "amountperperson", "amount"):
-                            amount_col = key
+                row_keys = list(chit_rows[0].keys())
+                for key in row_keys:
+                    kl = key.lower().strip()
+                    if kl in ("chit month", "month", "date", "chitmonth"):
+                        date_col = key
+                    if kl in ("amount per person", "amountperperson", "amount"):
+                        amount_col = key
 
                 if date_col and amount_col:
-                    # Build a map: month-year → amount per person
-                    month_amount_map = {}  # "Jan-2026" style key → amount
+                    # Build map: normalized month key → amount
+                    month_amount_map = {}
                     for row in chit_rows:
                         raw_date = str(row.get(date_col, "")).strip()
                         if not raw_date:
                             continue
-                        # Try to parse and normalize to "Mon-YYYY" format
                         month_key = None
                         for fmt in date_formats:
                             try:
                                 dt = datetime.strptime(raw_date, fmt)
-                                month_key = dt.strftime("%b-%Y")  # e.g. "Jan-2026"
+                                month_key = dt.strftime("%b-%Y")
                                 break
                             except (ValueError, Exception):
                                 continue
                         if not month_key:
-                            month_key = raw_date  # fallback to raw value
+                            month_key = raw_date
                         try:
                             amt = float(str(row.get(amount_col, 0)).replace(",", "").strip())
                         except (ValueError, TypeError):
@@ -1874,13 +1877,10 @@ def _search_member_in_chit(name, chit_file):
 
                     # Sum amounts for each unpaid month
                     for unpaid_month in unpaid_months:
-                        # Try to match unpaid_month (from chitMembers header) with chitNumberRows
                         matched_amount = None
-                        # Direct match
                         if unpaid_month in month_amount_map:
                             matched_amount = month_amount_map[unpaid_month]
                         else:
-                            # Try parsing unpaid_month and matching by month/year
                             for fmt in date_formats:
                                 try:
                                     dt = datetime.strptime(unpaid_month.strip(), fmt)
