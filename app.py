@@ -1427,7 +1427,6 @@ def _handle_bot_message(from_number, text):
 
                     now = date.today()
                     current_row = None
-                    from datetime import datetime
 
                     date_formats = ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%m-%d-%Y", "%d-%m-%y", "%b-%Y", "%B-%Y", "%b %Y", "%B %Y", "%m/%d/%Y"]
 
@@ -2125,7 +2124,6 @@ def _search_member_in_chit(name, chit_file):
             due_amount = 0
             chit_rows = view_data.get("chitNumberRows", [])
             if unpaid_months and chit_rows:
-                from datetime import datetime
                 date_formats = ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%b-%Y", "%B-%Y", "%b %Y", "%B %Y", "%m/%d/%Y", "%d-%m-%y"]
                 # Find the date column and amount column
                 date_col = None
