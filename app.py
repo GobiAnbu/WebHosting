@@ -1572,19 +1572,18 @@ def _handle_bot_message(from_number, text):
                 tomorrow_str = tomorrow.strftime("%d-%m-%Y")
                 reply = (
                     f"🔔 *Reminder: {chit_n} - Chit Tomorrow!*\n\n"
-                    f"📅 *Date:* {tomorrow_str}\n"
+                    f"Hi 👋,\n\n"
+                    f"This is a reminder that our chit *{chit_n}* will be conducted *tomorrow ({tomorrow_str})*.\n\n"
                     f"📌 *Chit Number:* {chit_num}\n\n"
-                    f"Dear Members,\n"
-                    f"Tomorrow is the chit day for *{chit_n}*.\n"
-                    f"If you want to take the chit, please come and participate.\n\n"
-                    f"📞 *Contact:* {contact} (Call to confirm your interest)\n\n"
+                    f"Please make sure to be available if you are willing to take the chit.\n\n"
+                    f"📞 *Contact:* {contact} (Call this number to confirm your interest)\n\n"
                     f"———————————\n\n"
                     f"🔔 *நினைவூட்டல்: {chit_n} - நாளை சிட்!*\n\n"
-                    f"📅 *தேதி:* {tomorrow_str}\n"
+                    f"வணக்கம் 👋,\n\n"
+                    f"நாளை *({tomorrow_str})* நமது *{chit_n}* சிட் நடைபெறும் என்பதை நினைவூட்டுகிறோம்.\n\n"
                     f"📌 *சிட் எண்:* {chit_num}\n\n"
-                    f"நாளை *{chit_n}* சிட் நடக்கிறது.\n"
                     f"நீங்கள் சிட் எடுக்க விரும்பினால், தயவுசெய்து வருகை தாருங்கள்.\n\n"
-                    f"📞 *தொடர்பு எண்:* {contact}\n\n"
+                    f"📞 *தொடர்பு எண்:* {contact} (உங்கள் ஆர்வத்தை உறுதிப்படுத்த இந்த எண்ணை அழைக்கவும்)\n\n"
                     f"நன்றி! 🙏"
                 )
                 send_whatsapp_message(from_number, reply)
