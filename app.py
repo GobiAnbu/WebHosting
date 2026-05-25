@@ -155,6 +155,24 @@ def _refresh_after_update(chit_file):
     except Exception as e:
         print(f"[Cache] ❌ Refresh after update failed for {chit_file}: {e}")
 
+def _update_env_file(updates: dict):
+    """Read .env, apply updates, and write back. Centralizes .env persistence."""
+    try:
+        env_vars = {}
+        if os.path.exists(".env"):
+            with open(".env", "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if "=" in line and not line.startswith("#"):
+                        key, val = line.split("=", 1)
+                        env_vars[key.strip()] = val.strip()
+        env_vars.update(updates)
+        with open(".env", "w") as f:
+            for key, val in env_vars.items():
+                f.write(f"{key}={val}\n")
+    except Exception:
+        pass
+
 CONFIG_FILE = "config.json"
 
 def load_config():
@@ -644,8 +662,7 @@ def send_campaign():
     encoded = urllib.parse.quote(msg)
 
     # Send directly via WhatsApp API to company contact number
-    chit_info_data = gs_get_chit_number(chit_file)
-    contact_phone = str(chit_info_data.get("contactNumber", "")).strip()
+    contact_phone = str(chit_info.get("contactNumber", "")).strip()
 
     if contact_phone:
         result = send_whatsapp_message(contact_phone, msg)
@@ -721,24 +738,13 @@ def save_config_route():
     if data.get("whatsapp_phone_number_id"):
         os.environ["WHATSAPP_PHONE_NUMBER_ID"] = data["whatsapp_phone_number_id"]
     # Persist to .env file so values survive restarts
-    try:
-        env_vars = {}
-        if os.path.exists(".env"):
-            with open(".env", "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if "=" in line and not line.startswith("#"):
-                        key, val = line.split("=", 1)
-                        env_vars[key.strip()] = val.strip()
-        if data.get("whatsapp_api_token"):
-            env_vars["WHATSAPP_API_TOKEN"] = data["whatsapp_api_token"]
-        if data.get("whatsapp_phone_number_id"):
-            env_vars["WHATSAPP_PHONE_NUMBER_ID"] = data["whatsapp_phone_number_id"]
-        with open(".env", "w") as f:
-            for key, val in env_vars.items():
-                f.write(f"{key}={val}\n")
-    except Exception:
-        pass
+    updates = {}
+    if data.get("whatsapp_api_token"):
+        updates["WHATSAPP_API_TOKEN"] = data["whatsapp_api_token"]
+    if data.get("whatsapp_phone_number_id"):
+        updates["WHATSAPP_PHONE_NUMBER_ID"] = data["whatsapp_phone_number_id"]
+    if updates:
+        _update_env_file(updates)
     return jsonify({"success": True})
 
 @app.route("/send-wa-direct", methods=["POST"])
@@ -1155,7 +1161,7 @@ def webhook_receive():
 
 @app.route("/webhook-test")
 def webhook_test():
-    return jsonify({"status": "ok", "message": "Webhook is reachable!", "verify_token": WEBHOOK_VERIFY_TOKEN})
+    return jsonify({"status": "ok", "message": "Webhook is reachable!"})
 
 @app.route("/get-webhook-token")
 @admin_required
@@ -1172,21 +1178,7 @@ def save_webhook_token():
         return jsonify({"success": False, "error": "Token cannot be empty"})
     WEBHOOK_VERIFY_TOKEN = token
     os.environ["WEBHOOK_VERIFY_TOKEN"] = token
-    try:
-        env_vars = {}
-        if os.path.exists(".env"):
-            with open(".env", "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if "=" in line and not line.startswith("#"):
-                        k, v = line.split("=", 1)
-                        env_vars[k.strip()] = v.strip()
-        env_vars["WEBHOOK_VERIFY_TOKEN"] = token
-        with open(".env", "w") as f:
-            for k, v in env_vars.items():
-                f.write(f"{k}={v}\n")
-    except Exception:
-        pass
+    _update_env_file({"WEBHOOK_VERIFY_TOKEN": token})
     return jsonify({"success": True})
 
 @app.route("/get-wa-web-enabled")
@@ -1201,22 +1193,7 @@ def set_wa_web_enabled():
     data = request.get_json()
     _wa_web_enabled = bool(data.get("enabled", True))
     os.environ["WA_WEB_ENABLED"] = "true" if _wa_web_enabled else "false"
-    # Persist to .env
-    try:
-        env_vars = {}
-        if os.path.exists(".env"):
-            with open(".env", "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if "=" in line and not line.startswith("#"):
-                        k, v = line.split("=", 1)
-                        env_vars[k.strip()] = v.strip()
-        env_vars["WA_WEB_ENABLED"] = "true" if _wa_web_enabled else "false"
-        with open(".env", "w") as f:
-            for k, v in env_vars.items():
-                f.write(f"{k}={v}\n")
-    except Exception:
-        pass
+    _update_env_file({"WA_WEB_ENABLED": "true" if _wa_web_enabled else "false"})
     return jsonify({"success": True, "enabled": _wa_web_enabled})
 
 # ==================== BOT CONVERSATION LOGIC ====================
@@ -2006,7 +1983,7 @@ def _handle_bot_message(from_number, text):
                 name = chit_names[i] if i < len(chit_names) else cf.replace(".xlsx", "")
                 if text_lower in name.lower() or text_lower in cf.lower().replace(".xlsx", ""):
                     role = chit_roles[i] if i < len(chit_roles) else "owner"
-                    member_name = chit_member_names[i] if i < len(chit_memberNames) else ""
+                    member_name = chit_member_names[i] if i < len(chit_member_names) else ""
                     _set_bot_session(from_number, {"step": "ready", "chitFile": cf, "chitName": name, "role": role, "memberName": member_name})
                     if role == "member":
                         _send_member_menu(from_number, name, f"You selected *{name}*\n\nHi *{member_name}*! Select an option below.")
