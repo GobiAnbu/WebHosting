@@ -323,7 +323,7 @@ def _send_chit_selection_list(phone, matched):
         })
     send_whatsapp_interactive(phone, {
         "type": "list",
-        "header": {"type": "text", "text": "👋 Welcome to Chit Fund Bot!"},
+        "header": {"type": "text", "text": "👋 Welcome! Glad to have you here!"},
         "body": {"text": "You have multiple chits. Please select one:"},
         "action": {
             "button": "Select Chit",
@@ -614,9 +614,10 @@ def send_campaign():
         if len(parts) == 3:
             formatted_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
 
-    # Get chit name
+    # Get chit name and gpay
     chit_info = gs_get_chit_number(chit_file)
     chit_name = chit_info.get("chitName", "")
+    gpay = chit_info.get("gpay", "-")
 
     msg = (
         f"Status of the Chit *{chit_name}*:\n\n"
@@ -627,6 +628,7 @@ def send_campaign():
         f"📅 *Date:* {formatted_date}\n"
         f"🔄 *Chit Remaining:* {chit_remaining}\n\n"
         f"💳 *Amount Need to Pay:* *₹{amount_need_to_pay}*\n\n"
+        f"📲 *Gpay/PhonePe to:* {gpay}\n\n"
         f"———————————\n\n"
         f"{chit_name} சிட் நிலை:\n\n"
         f"🎯 *சிட் எடுத்தவர்:* {name}\n"
@@ -636,6 +638,7 @@ def send_campaign():
         f"📅 *தேதி:* {formatted_date}\n"
         f"🔄 *மீதமுள்ள சிட்:* {chit_remaining}\n\n"
         f"💳 *செலுத்த வேண்டிய தொகை:* *₹{amount_need_to_pay}*\n\n"
+        f"📲 *Gpay/PhonePe க்கு:* {gpay}\n\n"
         f"நன்றி! 🎉"
     )
     encoded = urllib.parse.quote(msg)
@@ -1947,6 +1950,7 @@ def _handle_bot_message(from_number, text):
                 f"📅 *Date:* {today_str}\n"
                 f"🔄 *Chit Remaining:* {chit_remaining}\n\n"
                 f"💳 *Amount Need to Pay:* *₹{amount_need_to_pay}*\n\n"
+                f"📲 *Gpay/PhonePe to:* {gpay}\n\n"
                 f"———————————\n\n"
                 f"{chit_n} சிட் நிலை:\n\n"
                 f"🎯 *சிட் எடுத்தவர்:* {selected_name}\n"
@@ -1956,6 +1960,7 @@ def _handle_bot_message(from_number, text):
                 f"📅 *தேதி:* {today_str}\n"
                 f"🔄 *மீதமுள்ள சிட்:* {chit_remaining}\n\n"
                 f"💳 *செலுத்த வேண்டிய தொகை:* *₹{amount_need_to_pay}*\n\n"
+                f"📲 *Gpay/PhonePe க்கு:* {gpay}\n\n"
                 f"நன்றி! 🎉"
             )
 
